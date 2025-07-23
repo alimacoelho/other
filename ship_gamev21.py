@@ -3,6 +3,664 @@ import random
 import math
 
 
+class AssetManager:
+    """
+    Centraliza o carregamento e o fornecimento de todos os dados de configuração
+    e "assets" do jogo, como definições de sprites, inimigos e armas.
+    No futuro, também poderá gerenciar o carregamento de imagens e sons.
+    """
+    def __init__(self):
+        # --- DADOS DO PLAYER (Movido de Player.ANIMATION_FRAMES) ---
+        self.player_animation_data = {
+            'neutral': (0, 0),
+            'left': [
+                (11, 0), (22, 0), (33, 0), (41, 0)
+            ],
+            'right': [
+                (33, 12), (22, 12), (11, 12), (0, 12)
+            ]
+        }
+
+        # --- DADOS DOS INIMIGOS (Movido de Enemy.ANIMATION_DATA e Enemy.GLOW_SPRITE_DATA) ---
+        self.enemy_animation_data = {
+            'green':  [(50, 0), (50, 7)],
+            'orange': [(57, 0), (57, 7)],
+            'red':    [(64, 0), (64, 7)],
+            'purple': [(57, 14), (57, 21)],
+            'yellow': [(57, 36), (57, 43)],
+            'blue':   [(50, 14), (50, 21)]
+        }
+        
+        self.enemy_glow_data = {
+            'green': {
+                'high':   {'size': (12, 12), 'frames': [(70, 0), (84, 0)]},
+                'medium': {'size': (10, 10), 'frames': [(99, 1), (113, 1)]},
+                'low':    {'size': (8, 8),   'frames': [(127, 2), (138, 2)]}
+            },
+            'yellow': {
+                'high':   {'size': (12, 12), 'frames': [(70, 12), (84, 12)]},
+                'medium': {'size': (10, 10), 'frames': [(99, 13), (113, 13)]},
+                'low':    {'size': (8, 8),   'frames': [(127, 14), (138, 14)]}
+            },
+            'orange': {
+                'high':   {'size': (12, 12), 'frames': [(70, 24), (84, 24)]},
+                'medium': {'size': (10, 10), 'frames': [(99, 25), (113, 25)]},
+                'low':    {'size': (8, 8),   'frames': [(127, 26), (138, 26)]}
+            },
+            'blue': {
+                'high':   {'size': (12, 12), 'frames': [(70, 36), (84, 36)]},
+                'medium': {'size': (10, 10), 'frames': [(99, 37), (113, 37)]},
+                'low':    {'size': (8, 8),   'frames': [(127, 38), (138, 38)]}
+            },
+            'purple': {
+                'high':   {'size': (12, 12), 'frames': [(70, 48), (84, 48)]},
+                'medium': {'size': (10, 10), 'frames': [(99, 49), (113, 49)]},
+                'low':    {'size': (8, 8),   'frames': [(127, 50), (138, 50)]}
+            },
+            'red': {
+                'high':   {'size': (12, 12), 'frames': [(70, 60), (84, 60)]},
+                'medium': {'size': (10, 10), 'frames': [(99, 61), (113, 61)]},
+                'low':    {'size': (8, 8),   'frames': [(127, 62), (138, 62)]}
+            }
+        }
+        
+        # --- DEFINIÇÕES GERAIS DO JOGO (Movido de Game) ---
+        self.enemy_definitions = {
+            'red': {'color': 4, 'health': 4},
+            'purple': {'color': 8, 'health': 4},
+            'blue': {'color': 2, 'health': 4},
+            'green': {'color': 3, 'health': 4},
+            'yellow': {'color': 15, 'health': 4},
+            'orange': {'color': 5, 'health': 4},
+            'asteroid': {'color': 4, 'health': 5}
+        }
+        
+        self.movement_patterns = {
+            'alien_grid_formation': {
+                'type': 'simple_down',
+                'speed_range': (0.3, 0.3)
+            },
+            'alien_galaga_entry': {
+                'type': 'galaga_entry',
+                'speed_down': 0.7,
+                'horizontal_speed': 1.0,
+                'ascend_speed': 0.8,
+                'sin_amplitude': 40,
+                'sin_freq_scale': 0.09
+            },
+            'alien_side_entry_align': {
+                'type': 'side_entry_align',
+                'horizontal_speed': 1.5,
+                'y_center': 75,
+                'sin_amplitude': 55,
+                'sin_frequency': 0.033
+            },
+            'asteroid_slow_drift': {
+                'type': 'asteroid',
+                'dx_range': (-0.2, 0.2), 'dy_range': (0.1, 0.3), 'angular_speed_range': (-0.02, 0.02)
+            },
+            'asteroid_fast_fall': {
+                'type': 'asteroid',
+                'dx_range': (-0.1, 0.1), 'dy_range': (0.8, 1.2), 'angular_speed_range': (-0.05, 0.05)
+            }
+        }
+
+        self.bullet_properties = {
+            'standard': {'weapon_type': 'projectile', 'damage': 1, 'cooldown': 10, 'color': 7, 
+                         'num_shots': 1, 'speed': 4, 'angles_deg': [-90], 'spread_deg': 0, 
+                         'size': {'width': 1, 'height': 3}, 'behavior': None},
+
+            'red': {'weapon_type': 'laser', 'damage_per_frame': 2 / 60, 'cooldown': 0, 'color': 4},
+
+            'green': {'weapon_type': 'projectile', 'damage': 2, 'cooldown': 15, 'color': 3, 
+                       'num_shots': 2, 'speed': 1.062, 'angles_deg': [-110.55, -69.45], 'spread_deg': 0,
+                        'size': {'width': 2, 'height': 2}, 'behavior': {'type': 'boomerang', 'turn_speed': 0.04}},
+            
+            'blue': {
+                'weapon_type': 'projectile', 'damage': 0.6, 'cooldown': 14, 'color': 2, 
+                'num_shots': 3, 'speed': 4.5, 'angles_deg': [-105, -90, -75], 'spread_deg': 0, 
+                'size': {'width': 2, 'height': 2}, 'behavior': None
+            },
+            
+            'purple': {
+                'weapon_type': 'projectile', 'damage': 4, 'cooldown': 0, 'color': 8,
+                'num_shots': 1, 'speed': 8, 'angles_deg': [-90], 'spread_deg': 0,
+                'size': {'width': 3, 'height': 5}, 
+                'behavior': {'piercing': True},
+                'charge_time': 45
+            },
+            
+            'yellow': {'weapon_type': 'projectile', 'damage': 0.5, 'cooldown': 5, 'color': 15, 
+                       'num_shots': 1, 'speed': 6, 'angles_deg': [-90], 'spread_deg': 10, 
+                       'size': {'width': 1, 'height': 2}, 'behavior': None},
+            
+            'orange': {'weapon_type': 'projectile', 'damage': 4, 'cooldown': 30, 'color': 5, 
+                       'num_shots': 1, 'angles_deg': [-90], 'spread_deg': 0, 'size': {'width': 4, 'height': 4}, 
+                       'speed': 0, 'behavior': {'type': 'homing', 'homing_distance': 30, 'turn_speed': 0.1, 
+                        'max_speed': 0.5, 'acceleration': 0.02, 'initial_angle_deg': -90}}
+        }
+
+        self.asteroid_sizes = {
+            'small': 6,
+            'medium': 12,
+            'large': 24
+        }
+
+    # --- MÉTODOS DE ACESSO (GETTERS) ---
+    # Fornecem uma interface limpa para outras classes obterem os dados.
+
+    def get_player_animation_data(self):
+        return self.player_animation_data
+
+    def get_enemy_animation_data(self):
+        return self.enemy_animation_data
+
+    def get_enemy_glow_data(self):
+        return self.enemy_glow_data
+
+    def get_enemy_definitions(self):
+        return self.enemy_definitions
+
+    def get_movement_patterns(self):
+        return self.movement_patterns
+
+    def get_bullet_properties(self):
+        return self.bullet_properties
+    def get_asteroid_sizes(self):
+        return self.asteroid_sizes
+
+
+
+class BaseState:
+    """
+    Classe base para todos os estados do jogo. Define a interface comum.
+    """
+    def __init__(self, game):
+        self.game = game # Cada estado terá uma referência ao objeto principal do jogo.
+        self.name = "base"
+
+    def enter(self):
+        """Código a ser executado ao entrar neste estado."""
+        pass
+
+    def exit(self):
+        """Código a ser executado ao sair deste estado."""
+        pass
+
+    def update(self):
+        """Lógica de atualização do estado."""
+        pass
+
+    def draw(self):
+        """Lógica de desenho do estado."""
+        pass
+
+class StateManager:
+    """
+    Gerencia a pilha de estados do jogo e as transições entre eles.
+    """
+    def __init__(self, game):
+        self.game = game
+        self.states = {}
+        self.active_state = None
+
+    def add_state(self, state):
+        """Adiciona um estado ao dicionário de estados disponíveis."""
+        self.states[state.name] = state
+
+    def change_state(self, name):
+        """Muda o estado ativo do jogo."""
+        if self.active_state:
+            self.active_state.exit()
+        
+        if name in self.states:
+            self.active_state = self.states[name]
+            self.active_state.enter()
+        else:
+            print(f"Erro: Estado '{name}' não encontrado.")
+
+
+class PlayingState(BaseState):
+    def __init__(self, game):
+        super().__init__(game)
+        self.name = "playing"
+
+    def update(self):
+        
+
+
+        if pyxel.btnp(pyxel.KEY_P):
+                self.game.state_manager.change_state("paused")
+                return # Retorna imediatamente para não processar o resto do frame
+
+
+        self.game._update_wave_spawner()
+
+
+ # --- LÓGICA DO SCREEN SHAKE ---
+        if self.game.shake_duration > 0:
+            self.game.shake_offset_x = pyxel.rndi(-self.game.shake_intensity, self.game.shake_intensity)
+            self.game.shake_offset_y = pyxel.rndi(-self.game.shake_intensity, self.game.shake_intensity)
+            self.game.shake_duration -= 1
+        else:
+            self.game.shake_offset_x = 0
+            self.game.shake_offset_y = 0
+        # --- FIM DA LÓGICA DO SCREEN SHAKE ---
+
+        
+        self.game.game_time = pyxel.frame_count // self.game.game_fps 
+
+        # Lógica de ativação/desativação do boost
+        if pyxel.btnp(pyxel.KEY_C) or pyxel.btnp(pyxel.GAMEPAD1_BUTTON_X):
+            self.game.is_boosting = not self.game.is_boosting
+            if self.game.is_boosting: 
+                self.game.boost_timer = self.game.boost_duration 
+            else: 
+                self.game.player.speed = self.game.player_base_speed 
+        
+        # Gerenciamento do timer de boost
+        if self.game.is_boosting:
+            self.game.player.speed = self.game.player_boost_speed 
+            self.game.boost_timer -= 1
+            if self.game.boost_timer <= 0: 
+                self.game.is_boosting = False
+                self.game.player.speed = self.game.player_base_speed 
+        else:
+            self.game.player.speed = self.game.player_base_speed 
+
+        self.game.player.update() 
+
+        # Regeneração de Energia (Adicionado)
+        self.game.energy_recharge_timer += 1
+        if self.game.energy_recharge_timer >= self.game.energy_recharge_rate:
+            if self.game.player_energy < self.game.player_max_energy:
+                self.game.player_energy += 1
+            self.game.energy_recharge_timer = 0
+
+        # Atualiza todas as partículas de fundo (estrelas e asteroides de fundo)
+        for p in self.game.background_particles: p.update()
+        for p in self.game.midground_particles: p.update()
+        for p in self.game.foreground_particles: p.update()
+
+        # Geração de partículas de rastro para a nave do jogador
+        if self.game.is_boosting:
+            min_dy, max_dy, num_particles, c1, c2 = 1.0, 2.0, 6, 8, 2  
+            flame_size = 2 if random.random() < 0.4 else 1 
+        else:
+            min_dy, max_dy, num_particles, c1, c2 = 0.5, 1.0, 2, 4, 5 
+            flame_size = 1
+        
+        flame_color = c1 if pyxel.frame_count % 4 < 2 else c2 
+        flame_dx_offset = 0.5 if pyxel.btn(pyxel.KEY_LEFT) else -0.5 if pyxel.btn(pyxel.KEY_RIGHT) else 0
+
+        for _ in range(num_particles):
+            flame_x = self.game.player.x + pyxel.rndf(3, self.game.player.width - 4) #tamanho da chama
+            # A chama é gerada na parte inferior da nave, com um pequeno deslocamento aleatório
+            flame_y = self.game.player.y + self.game.player.height-1
+            dx = pyxel.rndf(-0.5, 0.5) + flame_dx_offset
+            dy = pyxel.rndf(min_dy, max_dy) 
+            self.game.flame_particles.append(FlameParticle(flame_x, flame_y, dx, dy, flame_color, pyxel.rndi(5,15), flame_size))
+
+        for p in self.game.flame_particles:
+            p.update()
+        # Depois, filtramos a lista
+        self.game.flame_particles[:] = [p for p in self.game.flame_particles if p.lifetime > 0]
+
+                # --- LÓGICA DE DISPARO ---
+        enemies_destroyed_this_frame = []
+        
+        current_bullet_type_name = self.game.bullet_type_keys[self.game.current_bullet_type_index]
+        props = self.game.asset_manager.get_bullet_properties()[current_bullet_type_name]
+        self.game.is_laser_active = False 
+        self.game.laser_draw_end_y = 0 
+        self.game.laser_spark_point = None
+        
+        self.game.player.is_charging = False
+        self.game.player.is_fully_charged = False
+
+        if current_bullet_type_name == 'red':
+            if pyxel.btn(pyxel.KEY_Z) or pyxel.btn(pyxel.GAMEPAD1_BUTTON_A):
+            # ### LÓGICA ADICIONADA ###
+            # Capturamos o retorno do método _fire_laser.
+                killed_enemy = self.game._fire_laser(props)
+        # Se um inimigo foi retornado (ou seja, foi derrotado),
+        # adiciona-o à nossa lista central de destruição.
+                if killed_enemy:
+                    enemies_destroyed_this_frame.append(killed_enemy)
+        elif current_bullet_type_name == 'purple':
+            if pyxel.btn(pyxel.KEY_Z) or pyxel.btn(pyxel.GAMEPAD1_BUTTON_A):
+                self.game.is_charging_weapon = True
+                self.game.player.is_charging = True
+                if self.game.charge_timer < props['charge_time']:
+                    self.game.charge_timer += 1
+                if self.game.charge_timer >= props['charge_time']:
+                    self.game.player.is_fully_charged = True
+            elif (pyxel.btnr(pyxel.KEY_Z) or pyxel.btnr(pyxel.GAMEPAD1_BUTTON_A)) and self.game.is_charging_weapon:
+                if self.game.charge_timer >= props['charge_time']:
+                    self.game._fire_projectiles(props)
+                self.game.is_charging_weapon = False
+                self.game.charge_timer = 0
+            else:
+                self.game.is_charging_weapon = False
+                self.game.charge_timer = 0
+        # --- START REPLACEMENT HERE ---
+        else: # This handles 'yellow' and any other projectile types that are not red/purple
+            if pyxel.btn(pyxel.KEY_Z) or pyxel.btn(pyxel.GAMEPAD1_BUTTON_A):
+                # Simple cooldown check for regular projectiles
+                is_ready_to_fire = (pyxel.frame_count - self.game.last_shot_frame[current_bullet_type_name] >= props['cooldown'])
+                
+                if is_ready_to_fire:
+                    if self.game._fire_projectiles(props): # This will now always return True
+                        self.game.last_shot_frame[current_bullet_type_name] = pyxel.frame_count
+
+                                
+        if pyxel.btnp(pyxel.KEY_X) or pyxel.btnp(pyxel.GAMEPAD1_BUTTON_B):
+            self.game.current_bullet_type_index = (self.game.current_bullet_type_index + 1) % len(self.game.bullet_type_keys)
+            self.game.yellow_burst_count = 0
+
+        if pyxel.btnp(pyxel.KEY_V) or pyxel.btnp(pyxel.GAMEPAD1_BUTTON_Y):
+            self.game.current_enemy_category = 'asteroids' if self.game.current_enemy_category == 'aliens' else 'aliens'
+            # Limpa tudo para a transição
+            self.game.enemies.clear()
+            self.game.enemies_to_spawn.clear()
+            # Reseta para a onda 1 da nova categoria e a prepara
+            self.game.wave_number = 1
+            self.game._setup_wave()
+            self.game.game_state = 'playing'
+
+
+        if pyxel.btnp(pyxel.KEY_G):
+            self.game.glow_mode = (self.game.glow_mode + 1) % 5
+
+        # Atualiza todos os inimigos
+        for enemy in self.game.enemies: 
+            new_bullet = enemy.update(self.game.player)
+            if new_bullet:
+                self.game.enemy_bullets.append(new_bullet)
+
+
+        # Tecla 'C' para forçar a próxima onda.
+        if pyxel.btnp(pyxel.KEY_C):
+            self.game.enemies.clear()
+            self.game.enemies_to_spawn.clear()
+            self.game.wave_spawn_timer = self.game.wave_spawn_delay # Força a transição imediata
+
+        # --- SEÇÃO DE COLISÃO DE BALAS E PROCESSAMENTO DE DESTRUIÇÃO ---
+        bullets_to_keep = []
+        
+        
+        for bullet in self.game.bullets:
+            if bullet.state == 'seeking' and not bullet.target_enemy:
+                closest_enemy, min_dist_sq = None, float('inf')
+                for enemy in self.game.enemies:
+                    if not isinstance(enemy, Asteroid): 
+                        dist_sq = ((enemy.x + enemy.width / 2) - bullet.x)**2 + ((enemy.y + enemy.height / 2) - bullet.y)**2
+                        if dist_sq < min_dist_sq:
+                            min_dist_sq, closest_enemy = dist_sq, enemy
+                if closest_enemy and min_dist_sq <= bullet.homing_distance_sq:
+                    bullet.target_enemy, bullet.state = closest_enemy, 'homing'
+            
+            bullet.update() 
+            
+            bullet_should_be_removed = False
+            for enemy in self.game.enemies:
+                collided = False
+                if isinstance(enemy, Asteroid):
+                    # Para asteroides, usamos a verificação precisa de polígono.
+                    # Pegamos o centro da bala como o ponto a ser verificado.
+                    bullet_center_x = bullet.x + bullet.width / 2
+                    bullet_center_y = bullet.y + bullet.height / 2
+                    if self.game._is_point_in_polygon(bullet_center_x, bullet_center_y, enemy.get_rotated_vertices()):
+                        collided = True
+                else:
+                    # Para inimigos normais (não rotacionados), o AABB é eficiente e correto.
+                    if self.game._check_aabb_collision(bullet.x, bullet.y, bullet.width, bullet.height, enemy.x, enemy.y, enemy.width, enemy.height):
+                        collided = True
+
+                if collided:
+                    # Gera faíscas de impacto toda vez que uma colisão é detectada.
+                    self.game.create_hit_sparks(bullet.x, bullet.y, bullet.color)
+
+                    if not bullet.behavior.get('piercing', False):
+                        bullet_should_be_removed = True
+
+                    damage_to_deal = bullet.damage
+                    if bullet.type == enemy.type and bullet.type != 'standard':
+                        damage_to_deal *= 2
+                    if isinstance(enemy, Asteroid) and bullet.type == 'orange':
+                        damage_to_deal *= 1.5
+
+                    if enemy.take_damage(damage_to_deal): 
+                        enemies_destroyed_this_frame.append(enemy) 
+                        self.game.score += 1 
+                    
+                    if bullet_should_be_removed:
+                        break 
+            
+            if bullet.y > -bullet.height and not bullet_should_be_removed:
+                bullets_to_keep.append(bullet)
+        
+        self.game.bullets = bullets_to_keep 
+
+        # --- Processa os inimigos destruídos e cria as explosões ---
+        newly_destroyed_enemies = [e for e in self.game.enemies if e in enemies_destroyed_this_frame]
+        new_fragments = []
+        for enemy in newly_destroyed_enemies:
+            if isinstance(enemy, Asteroid):
+                # Primeiro, tentamos partir o asteroide e guardamos os fragmentos.
+                fragments = enemy.shatter()
+                
+                # Agora, verificamos se ele realmente se partiu.
+                if fragments:
+                    # SE SIM (era grande/médio), usamos o novo efeito SUTIL de poeira.
+                    self.game.create_shatter_effect(enemy)
+                    # E adicionamos os novos fragmentos ao jogo.
+                    new_fragments.extend(fragments)
+                else:
+                    # SE NÃO (era pequeno), usamos a explosão FINAL e intensa.
+                    self.game.create_asteroid_debris_explosion(enemy)
+            else:
+                # Inimigos normais continuam usando a explosão de pixel debris.
+                self.game.create_pixel_explosion(enemy)
+        
+        # Atualiza a lista de inimigos, removendo os destruídos e adicionando fragmentos
+        self.game.enemies = [e for e in self.game.enemies if e not in newly_destroyed_enemies] + new_fragments
+
+        enemy_bullets_to_keep = []
+        for bullet in self.game.enemy_bullets:
+            bullet.update()
+            
+            collided_with_player = False
+            # Verifica a colisão apenas se o jogador estiver vivo e sem invencibilidade.
+            if self.player.is_alive and self.player.invincibility_timer == 0:
+                if self.game._check_aabb_collision(bullet.x, bullet.y, bullet.width, bullet.height,
+                                            self.player.x, self.player.y, self.player.width, self.player.height):
+                    
+                    collided_with_player = True
+                    self.player_hp -= 10 # Player toma 10 de dano
+                    self.game.trigger_screen_shake(duration=15, intensity=2) # Ativa o shake
+                    
+                    # Cria faíscas no jogador quando atingido.
+                    self.game.create_hit_sparks(self.game.player.x + self.game.player.width / 2, self.game.player.y + self.game.player.height / 2, bullet.color)
+
+                    if self.game.player_hp <= 0:
+                        self.game.player_lives -= 1
+                        if self.game.player_lives <= 0:
+                            self.game.player.is_alive = False
+                            self.game.state_manager.change_state("game_over")
+                        else:
+                            self.game.player_hp = self.game.player_max_hp # Reseta HP ao perder uma vida
+                            self.game.player.take_damage() # Ativa invencibilidade
+                    else: # Se o HP ainda está acima de zero
+                        self.game.player.take_damage() # Ativa a invencibilidade temporária.
+            
+            # Mantém a bala se ela não atingiu o jogador e ainda está na tela.
+            if not collided_with_player and bullet.y < pyxel.height and bullet.y > -bullet.height:
+                enemy_bullets_to_keep.append(bullet)
+                
+        self.game.enemy_bullets = enemy_bullets_to_keep
+
+        # --- FIM DA SEÇÃO DE COLISÃO DE BALAS ---
+
+        # Atualiza e remove partículas de explosão/detritos
+        self.game.particles[:] = [p for p in self.game.particles if p.update()]
+
+        # --- SEÇÃO DE COLISÃO JOGADOR-INIMIGO ---
+        if self.game.player.is_alive and self.game.player.invincibility_timer == 0:
+            enemies_collided_with_player = []
+            
+            # Define os vértices do retângulo do jogador uma vez
+            px, py = self.game.player.x, self.game.player.y
+            pw, ph = self.game.player.width, self.game.player.height
+            player_vertices = [(px, py), (px + pw, py), (px + pw, py + ph), (px, py + ph)]
+
+            for enemy in self.game.enemies:
+                collided = False
+                if isinstance(enemy, Asteroid):
+                    # Para asteroides, usamos a colisão precisa de polígonos
+                    asteroid_vertices = enemy.get_rotated_vertices()
+                    if self.game._check_polygon_collision(player_vertices, asteroid_vertices):
+                        collided = True
+                else:
+                    # Para inimigos normais, AABB é suficiente e mais rápido
+                    if self.game._check_aabb_collision(px, py, pw, ph, enemy.x, enemy.y, enemy.width, enemy.height):
+                        collided = True
+                
+                if collided:
+                    enemies_collided_with_player.append(enemy)
+
+            if enemies_collided_with_player:
+                self.game.player_hp -= 25 # Dano de colisão direta (maior)
+                self.game.trigger_screen_shake(duration=20, intensity=3) # Shake mais forte
+
+                # Para cada inimigo que colidiu, cria sua respectiva explosão
+                for enemy in enemies_collided_with_player:
+                    if isinstance(enemy, Asteroid):
+                        self.game.create_asteroid_debris_explosion(enemy)
+                        self.game.score += 0.5 
+                    else:
+                        self.game.create_pixel_explosion(enemy)
+                        self.game.score += 1 
+
+                # Remove os inimigos que colidiram
+                self.game.enemies = [e for e in self.game.enemies if e not in enemies_collided_with_player]
+                
+                if self.game.player_hp <= 0:
+                    self.game.player_lives -= 1
+                    if self.game.player_lives <= 0:
+                        self.game.player.is_alive = False
+                        self.game.state_manager.change_state("game_over")
+                    else:
+                        self.game.player_hp = self.game.player_max_hp
+                        self.game.player.take_damage()
+                else:
+                    self.game.player.take_damage()        # --- FIM DA SEÇÃO DE COLISÃO JOGADOR-INIMIGO ---
+
+        # Remove inimigos que saíram da tela ou foram destruídos
+        self.game.enemies[:] = [e for e in self.game.enemies if e.health > 0 and e.y < pyxel.height and e.x < pyxel.width and e.x + e.width > 0]
+
+        # Lógica de gerenciamento de ondas
+        self.game._update_wave_spawner()
+
+        # Atualiza e coleta power-ups
+        powerups_to_keep = []
+        for p in self.game.powerups:
+            p.update()
+            if self.game._check_aabb_collision(self.player.x, self.player.y, self.player.width, self.player.height, p.x, p.y, p.width, p.height):
+                if p.type == 'boost':
+                    self.game.is_boosting, self.game.boost_timer = True, self.game.boost_duration 
+            elif p.y < pyxel.height: 
+                powerups_to_keep.append(p)
+        self.game.powerups = powerups_to_keep
+
+
+        pass
+
+    def draw(self):
+        # A MAIORIA DO CÓDIGO DO Game.draw() VEM PARA CÁ.
+                # Aplica o offset do shake ANTES de limpar a tela e desenhar o fundo
+        pyxel.camera(self.game.shake_offset_x, self.game.shake_offset_y)
+
+        pyxel.cls(0) # Fundo da tela: Preto (0)
+        # 1. Desenha as camadas de fundo
+        for p in self.game.background_particles: p.draw()
+        for p in self.game.midground_particles: p.draw()
+        for p in self.game.foreground_particles: p.draw()
+        
+        # 2. Desenha os objetos principais do jogo
+        self.game.player.draw() 
+        for e in self.game.enemies: e.draw(self.game.glow_mode) # Passa o modo de glow para os inimigos
+        for p in self.game.powerups: p.draw()
+
+        # 3. Desenha os efeitos e projéteis por cima dos objetos
+        for p in self.game.flame_particles: p.draw()
+        if self.game.is_laser_active: 
+            laser_x = self.game.player.x + (self.game.player.width // 2)
+            pyxel.line(laser_x, self.game.player.y, laser_x, self.game.laser_draw_end_y, 4) 
+        for b in self.game.bullets: b.draw()
+        for b in self.game.enemy_bullets: b.draw() # Desenha as balas dos inimigos.
+        
+        ### CORREÇÃO: A LINHA ABAIXO FOI MOVIDA PARA DEPOIS DE DESENHAR OS INIMIGOS ###
+        # Agora as partículas de explosão são desenhadas por cima de tudo.
+        for p in self.game.particles: p.draw() 
+
+        # Reseta a câmera para desenhar elementos da UI que NÃO DEVEM tremer
+        pyxel.camera(0, 0)
+
+        # 4. Desenha a Interface do Usuário (HUD), que sempre fica na camada mais alta
+        self.game.hud.draw()
+        pass
+
+# ADICIONE ESTA NOVA CLASSE
+class PausedState(BaseState):
+    def __init__(self, game):
+        super().__init__(game)
+        self.name = "paused"
+
+    def update(self):
+        # Apenas verifica a tecla para despausar.
+        if pyxel.btnp(pyxel.KEY_P):
+            # Usa o StateManager para voltar ao estado de jogo.
+            self.game.state_manager.change_state("playing")
+
+    def draw(self):
+        # Primeiro, desenha a tela do jogo como ela estava.
+        self.game.playing_state.draw()
+        
+        # Depois, desenha a sobreposição de pausa por cima.
+        pyxel.bltm(0, 0, 0, 0, 126, pyxel.width, pyxel.height, 0)
+        text = "PAUSED"
+        text_x = (pyxel.width - len(text) * 4) / 2
+        pyxel.text(text_x, 60, text, 7)
+
+# ADICIONE ESTA NOVA CLASSE
+class GameOverState(BaseState):
+    def __init__(self, game):
+        super().__init__(game)
+        self.name = "game_over"
+
+    def update(self):
+        # Apenas verifica a tecla para reiniciar.
+        if pyxel.btnp(pyxel.KEY_SPACE) or pyxel.btnp(pyxel.GAMEPAD1_BUTTON_START):
+            self.game.restart_game()
+
+    def draw(self):
+        # Desenha a tela final do jogo.
+        self.game.playing_state.draw()
+        
+        # Desenha a mensagem "GAME OVER" por cima.
+        text = "GAME OVER"
+        text_x = (pyxel.width - len(text) * 4) / 2
+        pyxel.text(text_x, 50, text, 15)
+        
+        prompt = "PRESS SPACE TO RESTART"
+        prompt_x = (pyxel.width - len(prompt) * 4) / 2
+        if pyxel.frame_count % 30 < 20:
+            pyxel.text(prompt_x, 60, prompt, 7)
+    
+
+
+
 class Player:
     # --- CONSTANTES DE ANIMAÇÃO ---
     # Velocidade da animação. Número de frames do jogo por quadro de animação.
@@ -11,33 +669,17 @@ class Player:
 
     # Dicionário com as coordenadas (u, v) de todos os frames da animação na folha de sprites.
     # Organizar os dados assim deixa o código mais limpo e fácil de entender.
-    ANIMATION_FRAMES = {
-        # Sprite da nave parada (neutra)
-        'neutral': (0, 0),
-        # Lista de sprites para a inclinação à esquerda (Níveis 1 a 4)
-        'left': [
-            (11, 0),  # Nível 1
-            (22, 0),  # Nível 2
-            (33, 0),  # Nível 3
-            (41, 0)   # Nível 4
-        ],
-        # Lista de sprites para a inclinação à direita (Níveis 1 a 4)
-        # Note que as coordenadas foram inseridas na ordem correta da animação.
-        'right': [
-            (33, 12), # Nível 1
-            (22, 12), # Nível 2
-            (11, 12), # Nível 3
-            (0, 12)   # Nível 4
-        ]
-    }
+
 
     SPRITE_BANK = 0  # A "folha" ou Image Bank onde os sprites estão
     SPRITE_W = 9     # Largura (width) do sprite
     SPRITE_H = 9     # Altura (height) do sprite
     
-    def __init__(self, x, y):
+    def __init__(self, x, y,asset_manager):
         self.x = x
         self.y = y
+        self.asset_manager = asset_manager
+        self.animation_data = self.asset_manager.get_player_animation_data()
         self.width = self.SPRITE_W 
         self.height = self.SPRITE_H 
         self.speed = 1 
@@ -129,14 +771,14 @@ class Player:
             pyxel.circb(center_x, center_y, radius, color)
 
         # --- LÓGICA DE DESENHO DA NAVE (existente) ---
-        u, v = self.ANIMATION_FRAMES['neutral'] 
+        u, v = self.animation_data['neutral'] 
 
         if self.tilt_level < 0:
             frame_index = abs(self.tilt_level) - 1
-            u, v = self.ANIMATION_FRAMES['left'][frame_index]
+            u, v = self.animation_data['left'][frame_index]
         elif self.tilt_level > 0:
             frame_index = self.tilt_level - 1
-            u, v = self.ANIMATION_FRAMES['right'][frame_index]
+            u, v = self.animation_data['right'][frame_index]
 
         pyxel.blt(self.x, self.y, self.SPRITE_BANK, u, v, self.SPRITE_W, self.SPRITE_H, 0)
 
@@ -316,64 +958,19 @@ class Enemy:
     SPRITE_W = 6     # Largura do sprite do inimigo
     SPRITE_H = 6     # Altura do sprite do inimigo
 
-    # Dicionário com as coordenadas (u, v) dos 2 frames de animação para cada tipo de inimigo.
-    ANIMATION_DATA = {
-        'green':  [(50, 0), (50, 7)],
-        'orange': [(57, 0), (57, 7)],
-        'red':    [(64, 0), (64, 7)],
-        'purple': [(57, 14), (57, 21)],
-        'yellow': [(57, 36), (57, 43)],
-        'blue':   [(50, 14), (50, 21)] 
-    }
-
-    ### ATUALIZAÇÃO: CONSTANTES E DADOS PARA 3 NÍVEIS DE BRILHO ###
-    GLOW_HIGH_W, GLOW_HIGH_H = 12, 12
-    GLOW_MEDIUM_W, GLOW_MEDIUM_H = 10, 10 # Renomeado de "LOW"
-    GLOW_LOW_W, GLOW_LOW_H = 8, 8         # Novo nível
-
-    # Dicionário completo com as coordenadas dos sprites de brilho.
-    GLOW_SPRITE_DATA = {
-        'green': {
-            'high':   {'size': (12, 12), 'frames': [(70, 0), (84, 0)]},
-            'medium': {'size': (10, 10), 'frames': [(99, 1), (113, 1)]}, # Antigo 'low'
-            'low':    {'size': (8, 8),   'frames': [(127, 2), (138, 2)]}  # Novo
-        },
-        'yellow': {
-            'high':   {'size': (12, 12), 'frames': [(70, 12), (84, 12)]},
-            'medium': {'size': (10, 10), 'frames': [(99, 13), (113, 13)]},
-            'low':    {'size': (8, 8),   'frames': [(127, 14), (138, 14)]}
-        },
-        'orange': {
-            'high':   {'size': (12, 12), 'frames': [(70, 24), (84, 24)]},
-            'medium': {'size': (10, 10), 'frames': [(99, 25), (113, 25)]},
-            'low':    {'size': (8, 8),   'frames': [(127, 26), (138, 26)]}
-        },
-        'blue': {
-            'high':   {'size': (12, 12), 'frames': [(70, 36), (84, 36)]},
-            'medium': {'size': (10, 10), 'frames': [(99, 37), (113, 37)]},
-            'low':    {'size': (8, 8),   'frames': [(127, 38), (138, 38)]}
-        },
-        'purple': {
-            'high':   {'size': (12, 12), 'frames': [(70, 48), (84, 48)]},
-            'medium': {'size': (10, 10), 'frames': [(99, 49), (113, 49)]},
-            'low':    {'size': (8, 8),   'frames': [(127, 50), (138, 50)]}
-        },
-        'red': {
-            'high':   {'size': (12, 12), 'frames': [(70, 60), (84, 60)]},
-            'medium': {'size': (10, 10), 'frames': [(99, 61), (113, 61)]},
-            'low':    {'size': (8, 8),   'frames': [(127, 62), (138, 62)]}
-        }
-    }
-
     # A matriz SPRITE_DATA foi removida.
 
-    def __init__(self, x, y, type, color, health, movement_pattern, game_particles_list=None, **kwargs): 
+    def __init__(self, x, y, type, color, health, movement_pattern, asset_manager, game_particles_list=None, **kwargs):
+
         self.x = x
         self.y = y
         self.type = type 
         self.color = color
         self.health = health
         self.game_particles_list = game_particles_list 
+        self.asset_manager = asset_manager
+        self.animation_data = self.asset_manager.get_enemy_animation_data()
+        self.glow_sprite_data = self.asset_manager.get_enemy_glow_data()
         self.width = self.SPRITE_W 
         self.height = self.SPRITE_H
         self.movement_pattern = movement_pattern
@@ -521,10 +1118,10 @@ class Enemy:
         Desenha o inimigo usando sprites de brilho com múltiplos tamanhos,
         mantendo a hitbox lógica de 6x6.
         """
-        has_glow_sprites = self.type in self.GLOW_SPRITE_DATA
+        has_glow_sprites = self.type in self.glow_sprite_data
         
         if glow_mode == 0 or not has_glow_sprites:
-            frames = self.ANIMATION_DATA[self.type]
+            frames = self.animation_data[self.type]
             u, v = frames[self.animation_frame_index]
             pyxel.blt(self.x, self.y, self.SPRITE_BANK, u, v, self.SPRITE_W, self.SPRITE_H, 0)
             return
@@ -545,7 +1142,7 @@ class Enemy:
                 glow_state_to_draw = 'medium'
         
         # 2. Pega as propriedades do sprite de brilho correto.
-        sprite_props = self.GLOW_SPRITE_DATA[self.type][glow_state_to_draw]
+        sprite_props = self.glow_sprite_data[self.type][glow_state_to_draw]
         glow_w, glow_h = sprite_props['size']
         u, v = sprite_props['frames'][self.animation_frame_index]
 
@@ -563,7 +1160,7 @@ class Enemy:
 
 
 class Asteroid(Enemy):
-    def __init__(self, x, y, size_type, movement_pattern, initial_dx=None, initial_dy=None, game_particles_list=None): 
+    def __init__(self, x, y, size_type, movement_pattern, asset_manager, initial_dx=None, initial_dy=None, game_particles_list=None):
         asteroid_color = 4 
         self.size_type = size_type
         if self.size_type == 'small':
@@ -577,9 +1174,7 @@ class Asteroid(Enemy):
         self.movement_pattern = movement_pattern
         
         # Chama o construtor da classe base, passando o padrão de movimento.
-        super().__init__(x, y, 'asteroid', asteroid_color, asteroid_health, movement_pattern, game_particles_list)
-        self.width, self.height = self.base_size, self.base_size
-
+        super().__init__(x, y, 'asteroid', asteroid_color, asteroid_health, movement_pattern, asset_manager, game_particles_list)
         # --- MUDANÇA PRINCIPAL: USA OS VALORES DO PADRÃO ---
         dx_min, dx_max = movement_pattern['dx_range']
         dy_min, dy_max = movement_pattern['dy_range']
@@ -668,7 +1263,7 @@ class Asteroid(Enemy):
             frag_dy = (self.dy * 0.2 + fragment_speed * math.sin(angle))
             offset_x = pyxel.rndf(-self.base_size / 8, self.base_size / 8) # Pequeno offset para posicionamento
             offset_y = pyxel.rndf(-self.base_size / 8, self.base_size / 8)
-            fragments.append(Asteroid(center_x + offset_x, center_y + offset_y, fragment_size_type, self.movement_pattern, frag_dx, frag_dy, self.game_particles_list)) # Passa a lista de partículas
+            fragments.append(Asteroid(center_x + offset_x, center_y + offset_y, fragment_size_type, self.movement_pattern, self.asset_manager, frag_dx, frag_dy, self.game_particles_list))
         return fragments
 
 
@@ -847,7 +1442,7 @@ class HUD:
         
         # Usa a cor da bala definida em bullet_properties para a letra no círculo
 
-        bullet_display_color = self.game.bullet_properties[current_bullet_name.lower()]['color']
+        bullet_display_color = self.game.asset_manager.get_bullet_properties()[current_bullet_name.lower()]['color']
         
         # Ajusta a posição da letra no centro do círculo
         text_x = 9 - pyxel.FONT_WIDTH // 2 
@@ -906,74 +1501,16 @@ class Game:
     def __init__(self):
         self.game_fps = 60 
         pyxel.init(128, 128, title="Space Game", fps=self.game_fps)
-        pyxel.load("ship_game.pyxres")
+        pyxel.load("shipgame.pyxres")
+
+        self.asset_manager = AssetManager()
+
         # --- CONFIGURAÇÃO DA PALETA DE CORES ---
         # Definindo as cores Pyxel de 0 a 15 de acordo com a paleta fornecida e os novos requisitos
         
 
                 # Definições de inimigos ajustadas conforme as 6 cores
-        self.enemy_definitions = {
-            'red': {'color': 4, 'health': 4},      # Inimigo Vermelho
-            'purple': {'color': 8, 'health': 4},   # Inimigo Magenta (Purple)
-            'blue': {'color': 2, 'health': 4},     # Inimigo Azul (Ciano)
-            'green': {'color': 3, 'health': 4},    # Inimigo Verde
-            'yellow': {'color': 15, 'health': 4},   # Inimigo Amarelo
-            'orange': {'color': 5, 'health': 4},   # Inimigo Laranja
-            'asteroid': {'color': 4, 'health': 5}  # Asteroides usam cor Vermelha (4)
-        }
-
-
-
         
-        self.ASTEROID_SIZES = {
-                'small': 6,
-                'medium': 12,
-                'large': 24
-        }
-
-
-
-
-        ### NOVO: DICIONÁRIO DE PADRÕES DE MOVIMENTO ###
-        # Este é o seu novo painel de controle para o comportamento dos inimigos.
-        self.MOVEMENT_PATTERNS = {
-        # Padrão simples para a formação de grade (inspirado na Fase 1)
-        'alien_grid_formation': {
-            'type': 'simple_down',
-            'speed_range': (0.3, 0.3) 
-        },
-        
-        # Padrão de entrada "Galaga" (inspirado na Fase 2)
-        'alien_galaga_entry': {
-            'type': 'galaga_entry',
-            'speed_down': 0.7,
-            'horizontal_speed': 1.0,
-            'ascend_speed': 0.8,
-            'sin_amplitude': 40,
-            'sin_freq_scale': 0.09 # Valor pré-calculado
-        },
-
-        # Padrão de entrada lateral com alinhamento (inspirado na Fase 3)
-        'alien_side_entry_align': {
-            'type': 'side_entry_align',
-            'horizontal_speed': 1.5,
-            'y_center': 75, # Metade da tela
-            'sin_amplitude': 55,
-            'sin_frequency': 0.033 # Valor pré-calculado
-        },
-
-        # Padrões antigos de asteroide (mantidos)
-        'asteroid_slow_drift': {
-            'type': 'asteroid',
-            'dx_range': (-0.2, 0.2), 'dy_range': (0.1, 0.3), 'angular_speed_range': (-0.02, 0.02)
-        },
-        'asteroid_fast_fall': {
-            'type': 'asteroid',
-            'dx_range': (-0.1, 0.1), 'dy_range': (0.8, 1.2), 'angular_speed_range': (-0.05, 0.05)
-        }
-    }
-
-
 
 
         pyxel.colors[0]  = 0x000000 # 0: Preto
@@ -1004,11 +1541,11 @@ class Game:
 
         self.player_lives = 3 # Mantido para Game Over final, mas HP é o principal agora.
 
-        self.movement_pattern_keys = list(self.MOVEMENT_PATTERNS.keys())
+        self.movement_pattern_keys = list(self.asset_manager.get_movement_patterns().keys())
 # Índice para controlar qual padrão está selecionado.
         self.current_movement_pattern_index = 0
 
-        self.player = Player(pyxel.width / 2 - (Player(0,0).width // 2), pyxel.height - 16)
+        self.player = Player(pyxel.width / 2 - (Player(0,0, self.asset_manager).width // 2), pyxel.height - 16, self.asset_manager)
         
         ### NOVO: CONTROLE DE ONDAS E SPAWN ###
         self.wave_number = 1
@@ -1019,6 +1556,22 @@ class Game:
         # Instancia a HUD (Heads-Up Display)
         self.hud = HUD(self)
         
+        self.state_manager = StateManager(self)
+
+        # Criamos instâncias de cada estado para que o jogo as conheça
+        self.playing_state = PlayingState(self)
+        self.paused_state = PausedState(self)
+        self.game_over_state = GameOverState(self)
+
+        # Adicionamos os estados ao gerenciador
+        self.state_manager.add_state(self.playing_state)
+        self.state_manager.add_state(self.paused_state)
+        self.state_manager.add_state(self.game_over_state)
+
+        # Definimos o estado inicial do jogo
+        self.state_manager.change_state("playing")
+
+
         # Listas para gerenciar os objetos do jogo
         self.bullets = []
         self.particles = [] 
@@ -1036,12 +1589,12 @@ class Game:
         # Variáveis de jogo
         self.game_time = 0
         self.score = 0
-        self.game_state = 'playing' 
+        
         #self.wave_cleared_timer = 0
         #self.wave_cleared_delay = 60 * 1 # 1 segundo de atraso entre as ondas
         self.powerup_spawn_chance = 0.3 # Chance de um power-up aparecer
         self.glow_mode = 0
-        self.state_before_pause = None
+        
         
         # --- VARIÁVEIS DE SCREEN SHAKE ---
         self.shake_duration = 0  # Duração restante do shake
@@ -1062,55 +1615,15 @@ class Game:
         self.current_enemy_category = 'aliens' 
         self.is_charging_weapon = False
         self.charge_timer = 0
-
-
-        # Propriedades das diferentes categorias de arma
-        self.bullet_properties = {
-            'standard': {'weapon_type': 'projectile', 'damage': 1, 'cooldown': 10, 'color': 7, 
-                         'num_shots': 1, 'speed': 4, 'angles_deg': [-90], 'spread_deg': 0, 
-                         'size': {'width': 1, 'height': 3}, 'behavior': None},
-
-            'red': {'weapon_type': 'laser', 'damage_per_frame': 2 / self.game_fps, 'cooldown': 0, 'color': 4},
-
-            'green': {'weapon_type': 'projectile', 'damage': 2, 'cooldown': 15, 'color': 3, 
-                       'num_shots': 2, 'speed': 1.062, 'angles_deg': [-110.55, -69.45], 'spread_deg': 0,
-                        'size': {'width': 2, 'height': 2}, 'behavior': {'type': 'boomerang', 'turn_speed': 0.04}},
-            
-            'blue': {
-                'weapon_type': 'projectile', 'damage': 0.6, 'cooldown': 14, 'color': 2, 
-                'num_shots': 3, 'speed': 4.5, 'angles_deg': [-105, -90, -75], 'spread_deg': 0, 
-                'size': {'width': 2, 'height': 2}, 'behavior': None
-            },
-            
-            'purple': {
-                'weapon_type': 'projectile', 'damage': 4, 'cooldown': 0, 'color': 8,
-                'num_shots': 1, 'speed': 8, 'angles_deg': [-90], 'spread_deg': 0,
-                'size': {'width': 3, 'height': 5}, 
-                'behavior': {'piercing': True}, # A bala perfura inimigos
-                'charge_time': 45 # Frames necessários para carregar (0.75s a 60fps)
-            },
-            
-            # Arma Amarela (Burst) - Mantida como está
-            'yellow': {'weapon_type': 'projectile', 'damage': 0.7, 'cooldown': 15, 'color': 15, 
-                       'num_shots': 1, 'speed': 6, 'angles_deg': [-90], 'spread_deg': 10, 
-                       'size': {'width': 1, 'height': 2}, 'behavior': None, 'burst_props': {'count': 4, 'delay': 2}},
-            
-            'orange': {'weapon_type': 'projectile', 'damage': 4, 'cooldown': 30, 'color': 5, 
-                       'num_shots': 1, 'angles_deg': [-90], 'spread_deg': 0, 'size': {'width': 4, 'height': 4}, 
-                       'speed': 0, 'behavior': {'type': 'homing', 'homing_distance': 30, 'turn_speed': 0.1, 
-                        'max_speed': 0.5, 'acceleration': 0.02, 'initial_angle_deg': -90}}
-        }
         
         # Nomes dos tipos de bala para alternar - inclui os novos e a reorganização
-        self.bullet_type_keys = ['standard', 'red', 'purple', 'blue', 'green', 'yellow', 'orange'] 
+        self.bullet_type_keys = list(self.asset_manager.get_bullet_properties().keys())
         self.current_bullet_type_index = 0 
         self.last_shot_frame = {bullet_type: 0 for bullet_type in self.bullet_type_keys} 
         self.is_laser_active = False 
         self.laser_draw_end_y = 0 
         self.laser_spark_point = None
-        self.yellow_burst_count = 0      # Quantos tiros na rajada atual já foram disparados
-        self.yellow_burst_last_frame = 0 # O frame em que o último tiro da rajada foi disparado
-
+        
         # Geração das partículas de fundo (estrelas e agora asteroides de fundo)
         self.background_particles = [] 
         self.midground_particles = [] 
@@ -1124,7 +1637,7 @@ class Game:
         # Partículas de fundo (estrelas)
         # Distantes: Roxo Escuro (11)
         # Médias: Roxo Médio (10)
-        # Próximas: Roxo Claro (9)
+        # Próximas: Cinza escuro (1)
         for _ in range(50): 
             x = pyxel.rndi(0, pyxel.width - 1)
             y = pyxel.rndi(0, pyxel.height - 1)
@@ -1139,18 +1652,21 @@ class Game:
             x = pyxel.rndi(0, pyxel.width - 1)
             y = pyxel.rndi(0, pyxel.height - 1)
             size = pyxel.rndi(1, 2)
-            self.foreground_particles.append(BackgroundParticle(x, y, self.bg_speed_close, size, 9)) 
+            self.foreground_particles.append(BackgroundParticle(x, y, self.bg_speed_close, size, 1)) 
 
         # --- ADIÇÃO: Asteroides de Fundo ---
         # Asteroides de fundo distantes
+        asteroid_sizes = self.asset_manager.get_asteroid_sizes() # Pega os dados aqui
+
+        # Asteroides de fundo distantes
         for _ in range(5): 
-            size = self.ASTEROID_SIZES['large']
+            size = asteroid_sizes['large'] # Usa a variável local
             x = pyxel.rndi(0, pyxel.width - size)
             y = pyxel.rndi(0, pyxel.height - size)
             self.background_particles.append(BackgroundAsteroid(x, y, 'large', self.bg_speed_distant, 11))
 
         for _ in range(5):
-            size = self.ASTEROID_SIZES['medium']
+            size = asteroid_sizes['medium'] # Usa a variável local
             x = pyxel.rndi(0, pyxel.width - size)
             y = pyxel.rndi(0, pyxel.height - size)
             self.midground_particles.append(BackgroundAsteroid(x, y, 'medium', self.bg_speed_medium, 10))
@@ -1169,7 +1685,7 @@ class Game:
         self.player_hp = self.player_max_hp
         self.player_energy = self.player_max_energy
         self.score = 0
-        self.game_state = 'playing'
+        self.state_manager.change_state("playing")
         
         self.player.x = pyxel.width / 2 - (self.player.width // 2)
         self.player.y = pyxel.height - 16
@@ -1189,10 +1705,13 @@ class Game:
     def _setup_wave(self):
         """Prepara a lista de inimigos a serem gerados para a onda atual."""
         self.enemies_to_spawn = [] # Limpa a fila
+
+        enemy_defs = self.asset_manager.get_enemy_definitions()
+        movement_patterns = self.asset_manager.get_movement_patterns()
         
         if self.current_enemy_category == 'aliens':
             if self.wave_number == 1: # Formação de Grade (Inspirado na Fase 1)
-                pattern = self.MOVEMENT_PATTERNS['alien_grid_formation']
+                pattern = movement_patterns['alien_grid_formation']
                 num_rows, num_cols, spacing_x, spacing_y = 3, 5, 16, 12
                 num_enemy_types = len(self.specific_enemy_types)
                 start_x = (128 - (num_cols * Enemy.SPRITE_W + (num_cols - 1) * spacing_x)) / 2
@@ -1201,27 +1720,27 @@ class Game:
                     for col in range(num_cols):
                         enemy_random_index = pyxel.rndi(0, num_enemy_types-1)
                         enemy_type = self.specific_enemy_types[enemy_random_index]
-                        enemy_def = self.enemy_definitions[enemy_type]
+                        enemy_def = enemy_defs[enemy_type]
                         x, y = start_x + col * (Enemy.SPRITE_W + spacing_x), start_y + row * (Enemy.SPRITE_H + spacing_y)
                         self.enemies_to_spawn.append({'x': x, 'y': y, 'type': enemy_type, 'def': enemy_def, 'pattern': pattern, 'delay': 0})
 
             elif self.wave_number == 2: # Entrada Galaga (Inspirado na Fase 2)
-                pattern = self.MOVEMENT_PATTERNS['alien_galaga_entry']
+                pattern = self.asset_manager.get_movement_patterns()['alien_galaga_entry']
                 num_enemies = 8
                 final_positions = [(20 + i * 12, 40) for i in range(num_enemies)] # Posições finais em linha
                 for i in range(num_enemies):
                     enemy_type = random.choice(self.specific_enemy_types)
-                    enemy_def = self.enemy_definitions[enemy_type]
+                    enemy_def = enemy_defs[enemy_type]
                     kwargs = {'final_x': final_positions[i][0], 'final_y': final_positions[i][1]}
                     self.enemies_to_spawn.append({'x': 0, 'y': -10, 'type': enemy_type, 'def': enemy_def, 'pattern': pattern, 'delay': 30 * i, 'kwargs': kwargs})
 
             elif self.wave_number == 3: # Entrada Lateral (Inspirado na Fase 3)
-                pattern = self.MOVEMENT_PATTERNS['alien_side_entry_align']
+                pattern = self.asset_manager.get_movement_patterns()['alien_side_entry_align']
                 num_enemies = 10
                 final_positions = [(20 + (i % 5) * 18, 20 + (i // 5) * 15) for i in range(num_enemies)] # Grid 2x5
                 for i in range(num_enemies):
                     enemy_type = random.choice(self.specific_enemy_types)
-                    enemy_def = self.enemy_definitions[enemy_type]
+                    enemy_def = enemy_defs[enemy_type]
                     direction = 1 if i % 2 == 0 else -1
                     kwargs = {'final_x': final_positions[i][0], 'final_y': final_positions[i][1], 'direction': direction}
                     self.enemies_to_spawn.append({'x': 0, 'y': 0, 'type': enemy_type, 'def': enemy_def, 'pattern': pattern, 'delay': 20 * i, 'kwargs': kwargs})
@@ -1244,9 +1763,9 @@ class Game:
 
             for _ in range(num_asteroids):
                 pattern_name = random.choice(wave_patterns)
-                movement_pattern = self.MOVEMENT_PATTERNS[pattern_name]
+                movement_pattern = self.asset_manager.get_movement_patterns()[pattern_name]
                 size_type = random.choice(['medium', 'large'])
-                asteroid_size_ref = self.ASTEROID_SIZES[size_type]
+                asteroid_size_ref = self.asset_manager.get_asteroid_sizes()[size_type]
                 x, y = pyxel.rndi(0, pyxel.width - asteroid_size_ref), pyxel.rndi(-40, -20)
                 self.enemies_to_spawn.append({'is_asteroid': True, 'x': x, 'y': y, 'size': size_type, 'pattern': movement_pattern, 'delay': pyxel.rndi(0, 60)})
 
@@ -1269,16 +1788,18 @@ class Game:
                 # Lógica para criar o tipo certo de objeto
                 if enemy_data.get('is_asteroid'):
                     self.enemies.append(Asteroid(
-                        x=enemy_data['x'], y=enemy_data['y'], 
-                        size_type=enemy_data['size'],
-                        movement_pattern=enemy_data['pattern']
+                    x=enemy_data['x'], y=enemy_data['y'], 
+                    size_type=enemy_data['size'],
+                    movement_pattern=enemy_data['pattern'],
+                    asset_manager=self.asset_manager
                     ))
+                    
                 else: # É um inimigo alienígena padrão
                     kwargs = enemy_data.get('kwargs', {})
                     self.enemies.append(Enemy(
-                        x=enemy_data['x'], y=enemy_data['y'], type=enemy_data['type'], 
-                        color=enemy_data['def']['color'], health=enemy_data['def']['health'], 
-                        movement_pattern=enemy_data['pattern'], **kwargs
+                    x=enemy_data['x'], y=enemy_data['y'], type=enemy_data['type'], 
+                    color=enemy_data['def']['color'], health=enemy_data['def']['health'], 
+                    movement_pattern=enemy_data['pattern'], asset_manager=self.asset_manager, **kwargs
                     ))
                 
                 # Reseta o timer para o delay do próximo inimigo (se houver)
@@ -1291,20 +1812,20 @@ class Game:
         self.enemy_bullets.clear()
 
         enemy_type = self.enemy_types_sequence[self.current_enemy_type_index]
-        enemy_data = self.enemy_definitions[enemy_type]
+        # CORREÇÃO: Busca e armazena os dados ANTES de usá-los
+        enemy_data = self.asset_manager.get_enemy_definitions()[enemy_type]
         spawn_x, spawn_y = pyxel.width / 2 - Enemy.SPRITE_W / 2, 15
 
-        # 1. Pega o NOME do padrão atual usando o índice.
+        # Pega o NOME do padrão atual usando o índice.
         pattern_name = self.movement_pattern_keys[self.current_movement_pattern_index]
-        # 2. Pega o DICIONÁRIO completo do padrão correspondente.
-        movement_pattern = self.MOVEMENT_PATTERNS[pattern_name]
+        # Pega o DICIONÁRIO completo do padrão correspondente.
+        movement_pattern = self.asset_manager.get_movement_patterns()[pattern_name]
 
-        # 3. Passa o dicionário do padrão para o construtor do inimigo.
-        new_enemy = Enemy(spawn_x, spawn_y, enemy_type, enemy_data['color'], enemy_data['health'], movement_pattern)
+        # Agora a criação do inimigo funciona, pois `enemy_data` existe
+        new_enemy = Enemy(spawn_x, spawn_y, enemy_type, enemy_data['color'], enemy_data['health'], movement_pattern, self.asset_manager)        
         
         # Adiciona o inimigo único à lista.
-        self.enemies.append(new_enemy)    
-
+        self.enemies.append(new_enemy)
 
     def spawn_powerup(self):
         powerup_x = pyxel.rndi(0, pyxel.width - PowerUp(0,0,'boost').width)
@@ -1329,6 +1850,62 @@ class Game:
         if 0 <= t <= 1 and 0 <= u <= 1:
             return x1 + t * (x2 - x1), y1 + t * (y2 - y1)
         return None
+    
+
+    def _is_point_in_polygon(self, point_x, point_y, polygon_vertices):
+        """
+        Verifica se um ponto está dentro de um polígono usando o algoritmo Ray Casting.
+        Retorna True se o ponto estiver dentro, False caso contrário.
+        """
+        num_vertices = len(polygon_vertices)
+        if num_vertices < 3:
+            return False # Não é um polígono válido
+
+        intersections = 0
+        # O "raio" é um segmento de linha que vai do ponto até um ponto bem fora da tela à direita.
+        ray_end_x = pyxel.width + 10 
+
+        for i in range(num_vertices):
+            p1 = polygon_vertices[i]
+            # Garante que a última aresta conecte o último vértice ao primeiro.
+            p2 = polygon_vertices[(i + 1) % num_vertices] 
+
+            # Verifica se o nosso raio imaginário cruza esta aresta do polígono.
+            if self._line_intersection((point_x, point_y), (ray_end_x, point_y), p1, p2):
+                intersections += 1
+        
+        # Se o número de interseções for ímpar, o ponto está dentro.
+        return intersections % 2 == 1
+
+
+    def _check_polygon_collision(self, poly1_vertices, poly2_vertices):
+        """
+        Verifica a colisão entre dois polígonos convexos.
+        Retorna True se houver colisão, False caso contrário.
+        """
+        # Etapa 1: Verificar se alguma aresta do Polígono 1 cruza com alguma do Polígono 2
+        for i in range(len(poly1_vertices)):
+            p1 = poly1_vertices[i]
+            p2 = poly1_vertices[(i + 1) % len(poly1_vertices)] # Aresta do Polígono 1
+
+            for j in range(len(poly2_vertices)):
+                p3 = poly2_vertices[j]
+                p4 = poly2_vertices[(j + 1) % len(poly2_vertices)] # Aresta do Polígono 2
+
+                if self._line_intersection(p1, p2, p3, p4):
+                    return True # Encontrou uma interseção de arestas
+
+        # Etapa 2: Se não houver cruzamento de arestas, verificar se um polígono está dentro do outro.
+        # Basta testar um único ponto de cada polígono.
+        if self._is_point_in_polygon(poly1_vertices[0][0], poly1_vertices[0][1], poly2_vertices):
+            return True
+        
+        if self._is_point_in_polygon(poly2_vertices[0][0], poly2_vertices[0][1], poly1_vertices):
+            return True
+
+        return False
+
+
 
     def create_pixel_explosion(self, enemy):
             """
@@ -1337,7 +1914,7 @@ class Game:
             e cria uma partícula para cada um, simulando um efeito de despedaçamento.
             """
             # Obtém a lista de frames de animação para o tipo específico do inimigo.
-            frames = enemy.ANIMATION_DATA[enemy.type]
+            frames = enemy.animation_data[enemy.type]
             
             # Pega as coordenadas (u, v) do frame de animação que estava sendo exibido no momento da destruição.
             # Isso garante que a explosão corresponda visualmente ao inimigo.
@@ -1471,347 +2048,10 @@ class Game:
         self.shake_offset_y = 0
     
     def update(self):
+        self.state_manager.active_state.update()
 
-        self._update_wave_spawner()
-        # --- LÓGICA DE PAUSA ---
-        # Tecla para pausar/despausar o jogo.
-        if pyxel.btnp(pyxel.KEY_P):
-            # Se o jogo já está pausado, vamos despausá-lo.
-            if self.game_state == 'paused':
-                self.game_state = self.state_before_pause
-                self.state_before_pause = None
-            # Só podemos pausar se o jogo estiver ativamente em andamento.
-            elif self.game_state == 'playing':
-                self.state_before_pause = self.game_state
-                self.game_state = 'paused'
+
         
-        # Se o jogo estiver pausado, pulamos toda a lógica de atualização abaixo.
-        if self.game_state == 'paused':
-            return
-        
-        # --- FIM DA LÓGICA DE PAUSA ---
-        
-        # --- LÓGICA DO SCREEN SHAKE ---
-        if self.shake_duration > 0:
-            self.shake_offset_x = pyxel.rndi(-self.shake_intensity, self.shake_intensity)
-            self.shake_offset_y = pyxel.rndi(-self.shake_intensity, self.shake_intensity)
-            self.shake_duration -= 1
-        else:
-            self.shake_offset_x = 0
-            self.shake_offset_y = 0
-        # --- FIM DA LÓGICA DO SCREEN SHAKE ---
-
-        # Se o jogo acabou, só verifica o reinício.
-        if self.game_state == 'game_over':
-            if pyxel.btnp(pyxel.KEY_SPACE) or pyxel.btnp(pyxel.GAMEPAD1_BUTTON_START):
-                self.restart_game()
-            return # Para toda a outra lógica de update.
-
-        self.game_time = pyxel.frame_count // self.game_fps 
-
-        # Lógica de ativação/desativação do boost
-        if pyxel.btnp(pyxel.KEY_C) or pyxel.btnp(pyxel.GAMEPAD1_BUTTON_X):
-            self.is_boosting = not self.is_boosting
-            if self.is_boosting: 
-                self.boost_timer = self.boost_duration 
-            else: 
-                self.player.speed = self.player_base_speed 
-        
-        # Gerenciamento do timer de boost
-        if self.is_boosting:
-            self.player.speed = self.player_boost_speed 
-            self.boost_timer -= 1
-            if self.boost_timer <= 0: 
-                self.is_boosting = False
-                self.player.speed = self.player_base_speed 
-        else:
-            self.player.speed = self.player_base_speed 
-
-        self.player.update() 
-
-        # Regeneração de Energia (Adicionado)
-        self.energy_recharge_timer += 1
-        if self.energy_recharge_timer >= self.energy_recharge_rate:
-            if self.player_energy < self.player_max_energy:
-                self.player_energy += 1
-            self.energy_recharge_timer = 0
-
-        # Atualiza todas as partículas de fundo (estrelas e asteroides de fundo)
-        for p in self.background_particles: p.update()
-        for p in self.midground_particles: p.update()
-        for p in self.foreground_particles: p.update()
-
-        # Geração de partículas de rastro para a nave do jogador
-        if self.is_boosting:
-            min_dy, max_dy, num_particles, c1, c2 = 1.0, 2.0, 6, 8, 2  
-            flame_size = 2 if random.random() < 0.4 else 1 
-        else:
-            min_dy, max_dy, num_particles, c1, c2 = 0.5, 1.0, 2, 4, 5 
-            flame_size = 1
-        
-        flame_color = c1 if pyxel.frame_count % 4 < 2 else c2 
-        flame_dx_offset = 0.5 if pyxel.btn(pyxel.KEY_LEFT) else -0.5 if pyxel.btn(pyxel.KEY_RIGHT) else 0
-
-        for _ in range(num_particles):
-            flame_x = self.player.x + pyxel.rndf(3, self.player.width - 4) #tamanho da chama
-            # A chama é gerada na parte inferior da nave, com um pequeno deslocamento aleatório
-            flame_y = self.player.y + self.player.height-1
-            dx = pyxel.rndf(-0.5, 0.5) + flame_dx_offset
-            dy = pyxel.rndf(min_dy, max_dy) 
-            self.flame_particles.append(FlameParticle(flame_x, flame_y, dx, dy, flame_color, pyxel.rndi(5,15), flame_size))
-
-        for p in self.flame_particles:
-            p.update()
-        # Depois, filtramos a lista
-        self.flame_particles[:] = [p for p in self.flame_particles if p.lifetime > 0]
-
-        # --- LÓGICA DE DISPARO ---
-        enemies_destroyed_this_frame = []
-        
-        current_bullet_type_name = self.bullet_type_keys[self.current_bullet_type_index]
-        props = self.bullet_properties[current_bullet_type_name]
-        self.is_laser_active = False 
-        self.laser_draw_end_y = 0 
-        self.laser_spark_point = None
-        
-        self.player.is_charging = False
-        self.player.is_fully_charged = False
-
-        if current_bullet_type_name == 'red':
-            if pyxel.btn(pyxel.KEY_Z) or pyxel.btn(pyxel.GAMEPAD1_BUTTON_A):
-            # ### LÓGICA ADICIONADA ###
-            # Capturamos o retorno do método _fire_laser.
-                killed_enemy = self._fire_laser(props)
-        # Se um inimigo foi retornado (ou seja, foi derrotado),
-        # adiciona-o à nossa lista central de destruição.
-                if killed_enemy:
-                    enemies_destroyed_this_frame.append(killed_enemy)
-        elif current_bullet_type_name == 'purple':
-            if pyxel.btn(pyxel.KEY_Z) or pyxel.btn(pyxel.GAMEPAD1_BUTTON_A):
-                self.is_charging_weapon = True
-                self.player.is_charging = True
-                if self.charge_timer < props['charge_time']:
-                    self.charge_timer += 1
-                if self.charge_timer >= props['charge_time']:
-                    self.player.is_fully_charged = True
-            elif (pyxel.btnr(pyxel.KEY_Z) or pyxel.btnr(pyxel.GAMEPAD1_BUTTON_A)) and self.is_charging_weapon:
-                if self.charge_timer >= props['charge_time']:
-                    self._fire_projectiles(props)
-                self.is_charging_weapon = False
-                self.charge_timer = 0
-            else:
-                self.is_charging_weapon = False
-                self.charge_timer = 0
-        else:
-            if pyxel.btn(pyxel.KEY_Z) or pyxel.btn(pyxel.GAMEPAD1_BUTTON_A):
-                is_ready_to_fire = (
-                    props['weapon_type'] == 'projectile' and 
-                    (
-                        'burst_props' not in props and (pyxel.frame_count - self.last_shot_frame[current_bullet_type_name] >= props['cooldown']) or
-                        'burst_props' in props and (self.yellow_burst_count > 0 or (pyxel.frame_count - self.last_shot_frame[current_bullet_type_name] >= props['cooldown']))
-                    )
-                )
-                if is_ready_to_fire:
-                    if self._fire_projectiles(props): 
-                        self.last_shot_frame[current_bullet_type_name] = pyxel.frame_count
-        
-        # --- FIM DA LÓGICA DE DISPARO ---
-                                
-        if pyxel.btnp(pyxel.KEY_X) or pyxel.btnp(pyxel.GAMEPAD1_BUTTON_B):
-            self.current_bullet_type_index = (self.current_bullet_type_index + 1) % len(self.bullet_type_keys)
-            self.yellow_burst_count = 0
-
-        if pyxel.btnp(pyxel.KEY_V) or pyxel.btnp(pyxel.GAMEPAD1_BUTTON_Y):
-            self.current_enemy_category = 'asteroids' if self.current_enemy_category == 'aliens' else 'aliens'
-            # Limpa tudo para a transição
-            self.enemies.clear()
-            self.enemies_to_spawn.clear()
-            # Reseta para a onda 1 da nova categoria e a prepara
-            self.wave_number = 1
-            self._setup_wave()
-            self.game_state = 'playing'
-
-
-        if pyxel.btnp(pyxel.KEY_G):
-            self.glow_mode = (self.glow_mode + 1) % 5
-
-        # Atualiza todos os inimigos
-        for enemy in self.enemies: 
-            new_bullet = enemy.update(self.player)
-            if new_bullet:
-                self.enemy_bullets.append(new_bullet)
-
-
-        # Tecla 'C' para forçar a próxima onda.
-        if pyxel.btnp(pyxel.KEY_C):
-            self.enemies.clear()
-            self.enemies_to_spawn.clear()
-            self.wave_spawn_timer = self.wave_spawn_delay # Força a transição imediata
-
-        # --- SEÇÃO DE COLISÃO DE BALAS E PROCESSAMENTO DE DESTRUIÇÃO ---
-        bullets_to_keep = []
-        
-        
-        for bullet in self.bullets:
-            if bullet.state == 'seeking' and not bullet.target_enemy:
-                closest_enemy, min_dist_sq = None, float('inf')
-                for enemy in self.enemies:
-                    if not isinstance(enemy, Asteroid): 
-                        dist_sq = ((enemy.x + enemy.width / 2) - bullet.x)**2 + ((enemy.y + enemy.height / 2) - bullet.y)**2
-                        if dist_sq < min_dist_sq:
-                            min_dist_sq, closest_enemy = dist_sq, enemy
-                if closest_enemy and min_dist_sq <= bullet.homing_distance_sq:
-                    bullet.target_enemy, bullet.state = closest_enemy, 'homing'
-            
-            bullet.update() 
-            
-            bullet_should_be_removed = False
-            for enemy in self.enemies:
-                if self._check_aabb_collision(bullet.x, bullet.y, bullet.width, bullet.height, enemy.x, enemy.y, enemy.width, enemy.height):
-                    
-    
-                    # Gera faíscas de impacto toda vez que uma colisão é detectada.
-                    self.create_hit_sparks(bullet.x, bullet.y, bullet.color)
-
-                    if not bullet.behavior.get('piercing', False):
-                        bullet_should_be_removed = True
-
-                    damage_to_deal = bullet.damage
-                    if bullet.type == enemy.type and bullet.type != 'standard':
-                        damage_to_deal *= 2
-                    if isinstance(enemy, Asteroid) and bullet.type == 'orange':
-                        damage_to_deal *= 1.5
-
-                    if enemy.take_damage(damage_to_deal): 
-                        enemies_destroyed_this_frame.append(enemy) 
-                        self.score += 1 
-                    
-                    if bullet_should_be_removed:
-                        break 
-            
-            if bullet.y > -bullet.height and not bullet_should_be_removed:
-                bullets_to_keep.append(bullet)
-        
-        self.bullets = bullets_to_keep 
-
-        # --- Processa os inimigos destruídos e cria as explosões ---
-        newly_destroyed_enemies = [e for e in self.enemies if e in enemies_destroyed_this_frame]
-        new_fragments = []
-        for enemy in newly_destroyed_enemies:
-            if isinstance(enemy, Asteroid):
-                # Primeiro, tentamos partir o asteroide e guardamos os fragmentos.
-                fragments = enemy.shatter()
-                
-                # Agora, verificamos se ele realmente se partiu.
-                if fragments:
-                    # SE SIM (era grande/médio), usamos o novo efeito SUTIL de poeira.
-                    self.create_shatter_effect(enemy)
-                    # E adicionamos os novos fragmentos ao jogo.
-                    new_fragments.extend(fragments)
-                else:
-                    # SE NÃO (era pequeno), usamos a explosão FINAL e intensa.
-                    self.create_asteroid_debris_explosion(enemy)
-            else:
-                # Inimigos normais continuam usando a explosão de pixel debris.
-                self.create_pixel_explosion(enemy)
-        
-        # Atualiza a lista de inimigos, removendo os destruídos e adicionando fragmentos
-        self.enemies = [e for e in self.enemies if e not in newly_destroyed_enemies] + new_fragments
-
-        enemy_bullets_to_keep = []
-        for bullet in self.enemy_bullets:
-            bullet.update()
-            
-            collided_with_player = False
-            # Verifica a colisão apenas se o jogador estiver vivo e sem invencibilidade.
-            if self.player.is_alive and self.player.invincibility_timer == 0:
-                if self._check_aabb_collision(bullet.x, bullet.y, bullet.width, bullet.height,
-                                            self.player.x, self.player.y, self.player.width, self.player.height):
-                    
-                    collided_with_player = True
-                    self.player_hp -= 10 # Player toma 10 de dano
-                    self.trigger_screen_shake(duration=15, intensity=2) # Ativa o shake
-                    
-                    # Cria faíscas no jogador quando atingido.
-                    self.create_hit_sparks(self.player.x + self.player.width / 2, self.player.y + self.player.height / 2, bullet.color)
-
-                    if self.player_hp <= 0: # Verifica HP para Game Over
-                        self.player_lives -= 1 # Ainda mantém lives para múltiplas "mortes" antes do game over.
-                        if self.player_lives <= 0:
-                            self.player.is_alive = False
-                            self.game_state = 'game_over'
-                        else:
-                            self.player_hp = self.player_max_hp # Reseta HP ao perder uma vida
-                            self.player.take_damage() # Ativa invencibilidade
-                    else: # Se o HP ainda está acima de zero
-                        self.player.take_damage() # Ativa a invencibilidade temporária.
-            
-            # Mantém a bala se ela não atingiu o jogador e ainda está na tela.
-            if not collided_with_player and bullet.y < pyxel.height and bullet.y > -bullet.height:
-                enemy_bullets_to_keep.append(bullet)
-                
-        self.enemy_bullets = enemy_bullets_to_keep
-
-        # --- FIM DA SEÇÃO DE COLISÃO DE BALAS ---
-
-        # Atualiza e remove partículas de explosão/detritos
-        self.particles[:] = [p for p in self.particles if p.update()]
-
-        # --- SEÇÃO DE COLISÃO JOGADOR-INIMIGO ---
-        if self.player.is_alive and self.player.invincibility_timer == 0:
-            enemies_collided_with_player = []
-            for enemy in self.enemies:
-                if self._check_aabb_collision(self.player.x, self.player.y, self.player.width, self.player.height, enemy.x, enemy.y, enemy.width, enemy.height):
-                    enemies_collided_with_player.append(enemy)
-
-            if enemies_collided_with_player:
-                self.player_hp -= 25 # Dano de colisão direta (maior)
-                self.trigger_screen_shake(duration=20, intensity=3) # Shake mais forte
-
-                # Para cada inimigo que colidiu, cria sua respectiva explosão
-                for enemy in enemies_collided_with_player:
-                    if isinstance(enemy, Asteroid):
-                        # Asteroides colidindo com o jogador quebram no efeito de detritos completo
-                        self.create_asteroid_debris_explosion(enemy)
-                        # Asteroides também podem dar um pequeno score mesmo ao colidir
-                        self.score += 0.5 # Pequeno score por fragmentar
-                    else:
-                        self.create_pixel_explosion(enemy)
-                        self.score += 1 # Score por destruir inimigo na colisão
-
-                # Remove os inimigos que colidiram
-                self.enemies = [e for e in self.enemies if e not in enemies_collided_with_player]
-                
-                if self.player_hp <= 0:
-                    self.player_lives -= 1
-                    if self.player_lives <= 0:
-                        self.player.is_alive = False
-                        self.game_state = 'game_over'
-                    else:
-                        self.player_hp = self.player_max_hp
-                        self.player.take_damage()
-                else:
-                    self.player.take_damage() # Ativa invencibilidade mesmo sem perder vida
-        # --- FIM DA SEÇÃO DE COLISÃO JOGADOR-INIMIGO ---
-
-        # Remove inimigos que saíram da tela ou foram destruídos
-        self.enemies[:] = [e for e in self.enemies if e.health > 0 and e.y < pyxel.height and e.x < pyxel.width and e.x + e.width > 0]
-
-        # Lógica de gerenciamento de ondas
-        self._update_wave_spawner()
-
-        # Atualiza e coleta power-ups
-        powerups_to_keep = []
-        for p in self.powerups:
-            p.update()
-            if self._check_aabb_collision(self.player.x, self.player.y, self.player.width, self.player.height, p.x, p.y, p.width, p.height):
-                if p.type == 'boost':
-                    self.is_boosting, self.boost_timer = True, self.boost_duration 
-            elif p.y < pyxel.height: 
-                powerups_to_keep.append(p)
-        self.powerups = powerups_to_keep
-
-
     # Método para disparar o laser (arma 'red')
     def _fire_laser(self, props):
         """
@@ -1868,100 +2108,30 @@ class Game:
 
     # Método para disparar projéteis
     def _fire_projectiles(self, props):
-        # Lógica especial para a rajada (burst)
-        if 'burst_props' in props:
-            burst_config = props['burst_props']
-            # Se uma rajada está em andamento, verificamos o 'delay' (intervalo curto)
-            if self.yellow_burst_count > 0:
-                # Se o delay entre os tiros da rajada ainda não passou, não faz nada.
-                return False # Sinaliza que nenhum tiro foi disparado neste frame.
-            # Se não há rajada em andamento, a lógica de 'cooldown' principal já foi verificada no 'update'.
-        
-        # Pega as propriedades universais da arma
+        """
+        Fires projectiles based on the given properties.
+        Always returns True as there's no complex burst logic here.
+        """
         size, behavior = props['size'], props.get('behavior')
         player_center_x = self.player.x + (self.player.width // 2) - (size['width'] // 2) 
         bullet_y = self.player.y - 3 - (size['height'] - 1) 
 
-        # Dispara os projéteis
+        # Fire the projectiles
         for i in range(props['num_shots']):
             angle = math.radians(props['angles_deg'][i]) + pyxel.rndf(-math.radians(props['spread_deg'])/2, math.radians(props['spread_deg'])/2)
             dx, dy = props['speed'] * math.cos(angle), props['speed'] * math.sin(angle) 
             self.bullets.append(Bullet(player_center_x, bullet_y, props['color'], self.bullet_type_keys[self.current_bullet_type_index], dx, dy, props['damage'], size['height'], size['width'], behavior, self.flame_particles))
         
-        # Atualiza o estado da rajada, se aplicável
-        if 'burst_props' in props:
-            self.yellow_burst_count += 1
-            self.yellow_burst_last_frame = pyxel.frame_count
-            # Se a rajada terminou, reseta o contador para a próxima vez.
-            if self.yellow_burst_count >= props['burst_props']['count']:
-                self.yellow_burst_count = 0
-                # O cooldown principal será definido no 'update' porque a rajada terminou.
-                return True 
-            else:
-                # Se a rajada ainda não terminou, retornamos False para que o cooldown principal não seja resetado ainda.
-                return False 
-        
-        # Para armas normais, sempre retorna True para resetar o cooldown.
+        # Since there's no burst logic, always return True to indicate a shot was fired
+        # and allow the main cooldown in update() to be applied.
         return True
     
+
+
     def draw(self):
-        # Aplica o offset do shake ANTES de limpar a tela e desenhar o fundo
-        pyxel.camera(self.shake_offset_x, self.shake_offset_y)
 
-        pyxel.cls(0) # Fundo da tela: Preto (0)
+        self.state_manager.active_state.draw()
 
-        # 1. Desenha as camadas de fundo
-        for p in self.background_particles: p.draw()
-        for p in self.midground_particles: p.draw()
-        for p in self.foreground_particles: p.draw()
-        
-        # 2. Desenha os objetos principais do jogo
-        self.player.draw() 
-        for e in self.enemies: e.draw(self.glow_mode) # Passa o modo de glow para os inimigos
-        for p in self.powerups: p.draw()
-
-        # 3. Desenha os efeitos e projéteis por cima dos objetos
-        for p in self.flame_particles: p.draw()
-        if self.is_laser_active: 
-            laser_x = self.player.x + (self.player.width // 2)
-            pyxel.line(laser_x, self.player.y, laser_x, self.laser_draw_end_y, 4) 
-        for b in self.bullets: b.draw()
-        for b in self.enemy_bullets: b.draw() # Desenha as balas dos inimigos.
-        
-        ### CORREÇÃO: A LINHA ABAIXO FOI MOVIDA PARA DEPOIS DE DESENHAR OS INIMIGOS ###
-        # Agora as partículas de explosão são desenhadas por cima de tudo.
-        for p in self.particles: p.draw() 
-
-        # Reseta a câmera para desenhar elementos da UI que NÃO DEVEM tremer
-        pyxel.camera(0, 0)
-
-        # 4. Desenha a Interface do Usuário (HUD), que sempre fica na camada mais alta
-        self.hud.draw()
-
-        # Desenha a tela de "Onda Concluída" se o estado for correspondente
-        if self.game_state == 'paused':
-            # Desenha a sobreposição escura usando o padrão de 2x2 que criamos.
-            # pyxel.bltm(x, y, tm, u, v, w, h)
-            # tm = 0 (tilemap 0), (u,v) = (0,126) (coordenadas do nosso padrão no Image Bank)
-            pyxel.bltm(0, 0, 0, 0, 126, pyxel.width, pyxel.height, 0)
-            
-            # Desenha o texto "PAUSED" no centro.
-            text = "PAUSED"
-            text_x = (pyxel.width - len(text) * 4) / 2
-            pyxel.text(text_x, 60, text, 7) # Branco
-
-        
-        elif self.game_state == 'game_over':
-            # Mensagem principal de Game Over
-            text = "GAME OVER"
-            text_x = (pyxel.width - len(text) * 4) / 2
-            pyxel.text(text_x, 50, text, 15) # Amarelo (15)
-            
-            # Mensagem de instrução para reiniciar
-            prompt = "PRESS SPACE TO RESTART"
-            prompt_x = (pyxel.width - len(prompt) * 4) / 2
-            if pyxel.frame_count % 30 < 20:
-                pyxel.text(prompt_x, 60, prompt, 7)
 
 
 if __name__ == "__main__":
