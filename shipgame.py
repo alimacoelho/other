@@ -1,4 +1,3 @@
- 
 import pyxel
 import random
 import math
@@ -243,9 +242,9 @@ class Bullet:
                 rastro_color = 4 if pyxel.frame_count % 4 < 2 else 15 
                 back_x = self.x - 1.5 * math.cos(self.angle)
                 back_y = self.y - 1.5 * math.sin(self.angle)
-                particle_dx = -self.dx * 1.2 + random.uniform(-0.5, 0.5)
-                particle_dy = -self.dy * 1.2 + random.uniform(-0.5, 0.5)
-                self.particle_list.append(FlameParticle(back_x, back_y, particle_dx, particle_dy, rastro_color, random.randint(6, 12)))
+                particle_dx = -self.dx * 1.2 + pyxel.rndf(-0.5, 0.5)
+                particle_dy = -self.dy * 1.2 + pyxel.rndf(-0.5, 0.5)
+                self.particle_list.append(FlameParticle(back_x, back_y, particle_dx, particle_dy, rastro_color, pyxel.rndi(6, 12)))
 
         # Atualiza a posição da bala
         self.x += self.dx
@@ -368,25 +367,53 @@ class Enemy:
 
     # A matriz SPRITE_DATA foi removida.
 
-    def __init__(self, x, y, type, color, health, speed = 0.5,  game_particles_list=None): 
+    def __init__(self, x, y, type, color, health, movement_pattern, game_particles_list=None, **kwargs): 
         self.x = x
         self.y = y
         self.type = type 
         self.color = color
         self.health = health
-        self.speed = speed
         self.game_particles_list = game_particles_list 
-
         self.width = self.SPRITE_W 
         self.height = self.SPRITE_H
+        self.movement_pattern = movement_pattern
+        self.pattern_type = movement_pattern.get('type', 'simple_down')
+        
+        # Variáveis de estado
+        self.state = 'spawning' # Estado inicial padrão
+        self.state_timer = 0
+
+        # Inicialização baseada no tipo de padrão
+        if self.pattern_type == 'simple_down':
+            speed_min, speed_max = movement_pattern.get('speed_range', (0.5, 0.5))
+            self.speed = pyxel.rndf(speed_min, speed_max)
+        
+        elif self.pattern_type == 'galaga_entry':
+            self.state = 'DESCENDING_SIN'
+            self.y_start = y
+            self.x = 64 - (self.width / 2) # Sempre começa no centro
+            # Pega os parâmetros do dicionário de argumentos extras (**kwargs)
+            self.final_x = kwargs.get('final_x')
+            self.final_y = kwargs.get('final_y')
+        
+        elif self.pattern_type == 'side_entry_align':
+            self.state = 'ENTERING_WAVE'
+            self.direction = kwargs.get('direction', 1)
+            if self.direction == 1: self.x = -self.width
+            else: self.x = 128
+            self.final_x = kwargs.get('final_x')
+            self.final_y = kwargs.get('final_y')
+
 
         self.animation_frame_index = 0
-        self.animation_timer = random.randint(0, self.ANIMATION_SPEED)
-
-        # Cooldown entre os disparos (entre 1.5 e 3 segundos).
-        self.shoot_cooldown = random.randint(90, 180) 
-        # Registra o frame do último disparo para controlar o cooldown.
+        self.animation_timer = pyxel.rndi(0, self.ANIMATION_SPEED)
+        self.shoot_cooldown = pyxel.rndi(120, 240) # Aumentado para ser menos caótico
         self.last_shot_frame = pyxel.frame_count
+
+    def _update_simple_down(self):
+        self.y += self.speed
+
+
 
     def shoot(self, player_x, player_y):
         """Cria e retorna uma bala direcionada à posição do jogador."""
@@ -400,7 +427,7 @@ class Enemy:
         
         # Define as propriedades da bala.
         speed = 1.0 # Bala lenta
-        color = 15 if pyxel.frame_count % 5 < 2 else 7 # Alterna entre Amarelo e Amarelo Claro
+        color = 15 if pyxel.frame_count % 10 < 5 else 14 # Efeito de piscar amarelo
         size = 2
         
         # Calcula os vetores de movimento.
@@ -412,29 +439,81 @@ class Enemy:
         return new_bullet
 
 
+
+    def _update_galaga_entry(self):
+        pattern = self.movement_pattern
+        if self.state == 'DESCENDING_SIN':
+            sin_phase = (self.y - self.y_start) * pattern['sin_freq_scale']
+            self.x = 64 + math.sin(sin_phase) * pattern['sin_amplitude'] - (self.width / 2)
+            self.y += pattern['speed_down']
+            
+            if self.y >= self.final_y - 20: # Ponto de início da curva horizontal
+                self.state = "MOVING_HORIZONTAL"
+
+        elif self.state == "MOVING_HORIZONTAL":
+            if self.x < self.final_x:
+                self.x = min(self.x + pattern['horizontal_speed'], self.final_x)
+            elif self.x > self.final_x:
+                self.x = max(self.x - pattern['horizontal_speed'], self.final_x)
+            
+            if abs(self.x - self.final_x) < 1:
+                self.x = self.final_x
+                self.state = "ASCENDING"
+
+        elif self.state == "ASCENDING":
+            self.y -= pattern['ascend_speed']
+            if self.y <= self.final_y:
+                self.y = self.final_y
+                self.state = "HALTED"
+
+    def _update_side_entry_align(self):
+        pattern = self.movement_pattern
+        if self.state == 'ENTERING_WAVE':
+            self.x += pattern['horizontal_speed'] * self.direction
+            sin_phase = self.x * pattern['sin_frequency']
+            self.y = pattern['y_center'] + math.sin(sin_phase) * pattern['sin_amplitude']
+
+            # Condição de transição para alinhamento (ex: quando cruza o centro da tela)
+            if (self.direction == 1 and self.x > 64) or \
+            (self.direction == -1 and self.x < 64):
+                self.state = 'ALIGNING'
+        
+        elif self.state == 'ALIGNING':
+            # Interpolação suave para as posições finais
+            target_dx = self.final_x - self.x
+            target_dy = self.final_y - self.y
+            self.x += target_dx * 0.05
+            self.y += target_dy * 0.05
+
+            if abs(target_dx) < 1 and abs(target_dy) < 1:
+                self.x, self.y = self.final_x, self.final_y
+                self.state = 'HALTED'
+
     def take_damage(self, amount):
         self.health -= amount
         return self.health <= 0 
 
     def update(self, player=None):
-        """Atualiza o inimigo e retorna uma nova bala se ele atirar."""
-        # Lógica de movimento e animação existente.
-        self.y += self.speed
+        # Roteador de movimento
+        if self.pattern_type == 'simple_down':
+            self._update_simple_down()
+        elif self.pattern_type == 'galaga_entry':
+            self._update_galaga_entry()
+        elif self.pattern_type == 'side_entry_align':
+            self._update_side_entry_align()
+
+        # Animação do sprite (funciona para todos)
         self.animation_timer += 1
         if self.animation_timer >= self.ANIMATION_SPEED:
             self.animation_timer = 0
             self.animation_frame_index = 1 - self.animation_frame_index
         
-        # --- LÓGICA DE DISPARO ---
-        # Apenas inimigos amarelos atiram por enquanto.
-        if self.type == 'yellow' and player:
-            # Verifica se o cooldown já passou.
+        # Lógica de tiro (só atira quando parado)
+        if self.state == 'HALTED' and self.type == 'yellow' and player:
             if pyxel.frame_count - self.last_shot_frame > self.shoot_cooldown:
-                self.last_shot_frame = pyxel.frame_count # Reseta o timer
-                # Retorna a nova bala para que a classe Game possa gerenciá-la.
+                self.last_shot_frame = pyxel.frame_count
                 return self.shoot(player.x, player.y)
         
-        # Se não atirou, não retorna nada.
         return None
             
     def draw(self, glow_mode=0):
@@ -483,43 +562,35 @@ class Enemy:
 
 
 
-class Asteroid(Enemy,player=None):
-    def __init__(self, x, y, size_type='medium', initial_dx=None, initial_dy=None, game_particles_list=None): 
-        # A cor base dos asteroides é agora 4 (Vermelho)
+class Asteroid(Enemy):
+    def __init__(self, x, y, size_type, movement_pattern, initial_dx=None, initial_dy=None, game_particles_list=None): 
         asteroid_color = 4 
-        
         self.size_type = size_type
-        # Configurações para diferentes tamanhos de asteroide
         if self.size_type == 'small':
-            self.base_size = 6 
-            asteroid_health = 2
-            self.num_vertices = random.randint(5, 7) # Número de vértices para a forma poligonal
-            self.irregularity = 2.0 # Grau de irregularidade da forma
+            self.base_size, asteroid_health, self.num_vertices, self.irregularity = 6, 2, pyxel.rndi(5, 7), 2.0
         elif self.size_type == 'medium':
-            self.base_size = 12 
-            asteroid_health = 5
-            self.num_vertices = random.randint(7, 9)
-            self.irregularity = 3.5 
+            self.base_size, asteroid_health, self.num_vertices, self.irregularity = 12, 5, pyxel.rndi(7, 9), 3.5
         elif self.size_type == 'large':
-            self.base_size = 24 
-            asteroid_health = 10
-            self.num_vertices = random.randint(9, 12)
-            self.irregularity = 5.0 
+            self.base_size, asteroid_health, self.num_vertices, self.irregularity = 24, 10, pyxel.rndi(9, 12), 5.0
         
-        # Chama o construtor da classe base (Enemy), passando a lista de partículas
-        # O 'type' do asteroide continua sendo 'asteroid', e usa a cor 4 (Vermelho)
-        super().__init__(x, y, 'asteroid', asteroid_color, asteroid_health, game_particles_list)
-        # Sobrescreve width/height da classe Enemy para usar o base_size do asteroide
-        self.width = self.base_size 
-        self.height = self.base_size 
+        # Armazena o padrão para que os fragmentos (shatter) possam usá-lo também.
+        self.movement_pattern = movement_pattern
+        
+        # Chama o construtor da classe base, passando o padrão de movimento.
+        super().__init__(x, y, 'asteroid', asteroid_color, asteroid_health, movement_pattern, game_particles_list)
+        self.width, self.height = self.base_size, self.base_size
 
-        # Componentes de velocidade e velocidade angular (para rotação)
-        self.dx = (initial_dx if initial_dx is not None else random.uniform(-0.5, 0.5)) / 2.0 
-        self.dy = (initial_dy if initial_dy is not None else random.uniform(0.2, 0.7)) / 2.0 
-        self.angular_speed = random.uniform(-0.05, 0.05) / 2.0 
-        self.rotation = random.uniform(0, math.pi * 2) # Ângulo de rotação inicial
+        # --- MUDANÇA PRINCIPAL: USA OS VALORES DO PADRÃO ---
+        dx_min, dx_max = movement_pattern['dx_range']
+        dy_min, dy_max = movement_pattern['dy_range']
+        as_min, as_max = movement_pattern['angular_speed_range']
 
-        self._generate_vertices() # Gera os vértices que definem a forma do asteroide
+        self.dx = initial_dx if initial_dx is not None else pyxel.rndf(dx_min, dx_max)
+        self.dy = initial_dy if initial_dy is not None else pyxel.rndf(dy_min, dy_max)
+        self.angular_speed = pyxel.rndf(as_min, as_max)
+        self.rotation = pyxel.rndf(0, math.pi * 2)
+
+        self._generate_vertices()
 
     def _generate_vertices(self):
         # Lógica de geração de vértices similar à classe Asteroid
@@ -528,8 +599,8 @@ class Asteroid(Enemy,player=None):
         
         for i in range(self.num_vertices):
             # Adiciona uma pequena aleatoriedade ao ângulo e ao raio para a irregularidade
-            angle = i * angle_step + random.uniform(-0.1, 0.1) 
-            radius = self.base_size / 2 + random.uniform(-self.irregularity, self.irregularity)
+            angle = i * angle_step + pyxel.rndf(-0.1, 0.1) 
+            radius = self.base_size / 2 + pyxel.rndf(-self.irregularity, self.irregularity)
             vx = radius * math.cos(angle)
             vy = radius * math.sin(angle)
             self.vertices.append((vx, vy))
@@ -545,7 +616,7 @@ class Asteroid(Enemy,player=None):
             rotated_vertices.append((center_x + x_rot, center_y + y_rot))
         return rotated_vertices
 
-    def update(self):
+    def update(self, player=None):
         # Nao chamamos super().update() aqui para que os asteroides nao gerem particulas de brilho
         self.x += self.dx
         self.y += self.dy
@@ -591,13 +662,13 @@ class Asteroid(Enemy,player=None):
 
         # Cria novos fragmentos com velocidades de espalhamento
         for i in range(num_fragments):
-            angle = (i * (2 * math.pi / num_fragments)) + random.uniform(-0.5, 0.5) 
-            fragment_speed = random.uniform(0.5, 1.0) / 2.0 
+            angle = (i * (2 * math.pi / num_fragments)) + pyxel.rndf(-0.5, 0.5) 
+            fragment_speed = pyxel.rndf(0.5, 1.0) / 2.0 
             frag_dx = (self.dx * 0.2 + fragment_speed * math.cos(angle)) # Adiciona um pouco do movimento original
             frag_dy = (self.dy * 0.2 + fragment_speed * math.sin(angle))
-            offset_x = random.uniform(-self.base_size / 8, self.base_size / 8) # Pequeno offset para posicionamento
-            offset_y = random.uniform(-self.base_size / 8, self.base_size / 8)
-            fragments.append(Asteroid(center_x + offset_x, center_y + offset_y, fragment_size_type, frag_dx, frag_dy, self.game_particles_list)) # Passa a lista de partículas
+            offset_x = pyxel.rndf(-self.base_size / 8, self.base_size / 8) # Pequeno offset para posicionamento
+            offset_y = pyxel.rndf(-self.base_size / 8, self.base_size / 8)
+            fragments.append(Asteroid(center_x + offset_x, center_y + offset_y, fragment_size_type, self.movement_pattern, frag_dx, frag_dy, self.game_particles_list)) # Passa a lista de partículas
         return fragments
 
 
@@ -615,7 +686,7 @@ class BackgroundParticle:
         # Se a partícula sair da tela, reposiciona no topo
         if self.y > pyxel.height:
             self.y = -self.size
-            self.x = random.randint(0, pyxel.width - 1)
+            self.x = pyxel.rndi(0, pyxel.width - 1)
 
     def draw(self):
         if self.size == 1:
@@ -638,22 +709,22 @@ class BackgroundAsteroid:
         # Configurações de tamanho e forma baseadas no size_type
         if self.size_type == 'small':
             self.base_size = 6
-            self.num_vertices = random.randint(5, 7)
+            self.num_vertices = pyxel.rndi(5, 7)
             self.irregularity = 2.0
         elif self.size_type == 'medium':
             self.base_size = 12
-            self.num_vertices = random.randint(7, 9)
+            self.num_vertices = pyxel.rndi(7, 9)
             self.irregularity = 3.5
         elif self.size_type == 'large':
             self.base_size = 24
-            self.num_vertices = random.randint(9, 12)
+            self.num_vertices = pyxel.rndi(9, 12)
             self.irregularity = 5.0
         
         # Componentes de movimento lateral e rotação, proporcionais à velocidade principal para o efeito de profundidade
-        self.dx = random.uniform(-0.1, 0.1) * self.speed * 0.5 # Pequeno desvio lateral, ajustado
+        self.dx = pyxel.rndf(-0.1, 0.1) * self.speed * 0.5 # Pequeno desvio lateral, ajustado
         self.dy_base = self.speed # Componente Y da velocidade (principalmente para baixo)
-        self.angular_speed = random.uniform(-0.02, 0.02) * self.speed * 0.5 # Velocidade de rotação, ajustada
-        self.rotation = random.uniform(0, math.pi * 2)
+        self.angular_speed = pyxel.rndf(-0.02, 0.02) * self.speed * 0.5 # Velocidade de rotação, ajustada
+        self.rotation = pyxel.rndf(0, math.pi * 2)
 
         self._generate_vertices()
 
@@ -662,8 +733,8 @@ class BackgroundAsteroid:
         self.vertices = []
         angle_step = (2 * math.pi) / self.num_vertices
         for i in range(self.num_vertices):
-            angle = i * angle_step + random.uniform(-0.1, 0.1)
-            radius = self.base_size / 2 + random.uniform(-self.irregularity, self.irregularity)
+            angle = i * angle_step + pyxel.rndf(-0.1, 0.1)
+            radius = self.base_size / 2 + pyxel.rndf(-self.irregularity, self.irregularity)
             vx = radius * math.cos(angle)
             vy = radius * math.sin(angle)
             self.vertices.append((vx, vy))
@@ -676,11 +747,11 @@ class BackgroundAsteroid:
         # Reposiciona o asteroide no topo da tela quando sai por baixo
         if self.y > pyxel.height:
             self.y = -self.base_size
-            self.x = random.randint(0, pyxel.width - self.base_size)
+            self.x = pyxel.rndi(0, pyxel.width - self.base_size)
             # Reseta as propriedades de movimento e rotação para variar a aparência
-            self.dx = random.uniform(-0.1, 0.1) * self.speed * 0.5
-            self.angular_speed = random.uniform(-0.02, 0.02) * self.speed * 0.5
-            self.rotation = random.uniform(0, math.pi * 2)
+            self.dx = pyxel.rndf(-0.1, 0.1) * self.speed * 0.5
+            self.angular_speed = pyxel.rndf(-0.02, 0.02) * self.speed * 0.5
+            self.rotation = pyxel.rndf(0, math.pi * 2)
             self._generate_vertices() # Gera uma nova forma para o asteroide
 
     def draw(self):
@@ -779,8 +850,8 @@ class HUD:
         bullet_display_color = self.game.bullet_properties[current_bullet_name.lower()]['color']
         
         # Ajusta a posição da letra no centro do círculo
-        text_x = 8 - pyxel.FONT_WIDTH // 2 
-        text_y = 8 - pyxel.FONT_HEIGHT // 2
+        text_x = 9 - pyxel.FONT_WIDTH // 2 
+        text_y = 9 - pyxel.FONT_HEIGHT // 2
         pyxel.text(text_x, text_y, display_char, bullet_display_color)
 
 
@@ -835,10 +906,76 @@ class Game:
     def __init__(self):
         self.game_fps = 60 
         pyxel.init(128, 128, title="Space Game", fps=self.game_fps)
-        pyxel.load("ship_game.pyxres")
+        pyxel.load("shipgame.pyxres")
         # --- CONFIGURAÇÃO DA PALETA DE CORES ---
         # Definindo as cores Pyxel de 0 a 15 de acordo com a paleta fornecida e os novos requisitos
         
+
+                # Definições de inimigos ajustadas conforme as 6 cores
+        self.enemy_definitions = {
+            'red': {'color': 4, 'health': 4},      # Inimigo Vermelho
+            'purple': {'color': 8, 'health': 4},   # Inimigo Magenta (Purple)
+            'blue': {'color': 2, 'health': 4},     # Inimigo Azul (Ciano)
+            'green': {'color': 3, 'health': 4},    # Inimigo Verde
+            'yellow': {'color': 15, 'health': 4},   # Inimigo Amarelo
+            'orange': {'color': 5, 'health': 4},   # Inimigo Laranja
+            'asteroid': {'color': 4, 'health': 5}  # Asteroides usam cor Vermelha (4)
+        }
+
+
+
+        
+        self.ASTEROID_SIZES = {
+                'small': 6,
+                'medium': 12,
+                'large': 24
+        }
+
+
+
+
+        ### NOVO: DICIONÁRIO DE PADRÕES DE MOVIMENTO ###
+        # Este é o seu novo painel de controle para o comportamento dos inimigos.
+        self.MOVEMENT_PATTERNS = {
+        # Padrão simples para a formação de grade (inspirado na Fase 1)
+        'alien_grid_formation': {
+            'type': 'simple_down',
+            'speed_range': (0.3, 0.3) 
+        },
+        
+        # Padrão de entrada "Galaga" (inspirado na Fase 2)
+        'alien_galaga_entry': {
+            'type': 'galaga_entry',
+            'speed_down': 0.7,
+            'horizontal_speed': 1.0,
+            'ascend_speed': 0.8,
+            'sin_amplitude': 40,
+            'sin_freq_scale': 0.09 # Valor pré-calculado
+        },
+
+        # Padrão de entrada lateral com alinhamento (inspirado na Fase 3)
+        'alien_side_entry_align': {
+            'type': 'side_entry_align',
+            'horizontal_speed': 1.5,
+            'y_center': 75, # Metade da tela
+            'sin_amplitude': 55,
+            'sin_frequency': 0.033 # Valor pré-calculado
+        },
+
+        # Padrões antigos de asteroide (mantidos)
+        'asteroid_slow_drift': {
+            'type': 'asteroid',
+            'dx_range': (-0.2, 0.2), 'dy_range': (0.1, 0.3), 'angular_speed_range': (-0.02, 0.02)
+        },
+        'asteroid_fast_fall': {
+            'type': 'asteroid',
+            'dx_range': (-0.1, 0.1), 'dy_range': (0.8, 1.2), 'angular_speed_range': (-0.05, 0.05)
+        }
+    }
+
+
+
+
         pyxel.colors[0]  = 0x000000 # 0: Preto
         pyxel.colors[1]  = 0x999999 # 1: Cinza
         pyxel.colors[2]  = 0x00FFFF # 2: Ciano (agora definido como Branco)
@@ -850,7 +987,7 @@ class Game:
         pyxel.colors[8]  = 0xFF00FF # 8: Magenta
         pyxel.colors[9]  = 0x800080 # 9: Roxo Claro
         pyxel.colors[10] = 0x4C004C # 10: Roxo Médio
-        pyxel.colors[11] = 0x004C4C # 11: Azul Escuro (Teal)
+        pyxel.colors[11] = 0x330033 # 11: Roxo escuro (Teal)
         pyxel.colors[12] = 0x804000 # 12: Marrom
         pyxel.colors[13] = 0x4C4C00 # 13: Amarelo Médio
         pyxel.colors[14] = 0x808000 # 14: Amarelo Claro
@@ -867,9 +1004,18 @@ class Game:
 
         self.player_lives = 3 # Mantido para Game Over final, mas HP é o principal agora.
 
+        self.movement_pattern_keys = list(self.MOVEMENT_PATTERNS.keys())
+# Índice para controlar qual padrão está selecionado.
+        self.current_movement_pattern_index = 0
 
         self.player = Player(pyxel.width / 2 - (Player(0,0).width // 2), pyxel.height - 16)
         
+        ### NOVO: CONTROLE DE ONDAS E SPAWN ###
+        self.wave_number = 1
+        self.wave_spawn_timer = 0
+        self.wave_spawn_delay = 180 # 3 segundos de delay entre ondas
+        self.enemy_spawn_timer = 0
+        self.enemies_to_spawn = [] # Uma "fila" de inimigos a serem criados
         # Instancia a HUD (Heads-Up Display)
         self.hud = HUD(self)
         
@@ -903,16 +1049,11 @@ class Game:
         self.shake_offset_x = 0  # Deslocamento X da tela
         self.shake_offset_y = 0  # Deslocamento Y da tela
 
-        # Definições de inimigos ajustadas conforme as 6 cores
-        self.enemy_definitions = {
-            'red': {'color': 4, 'health': 4},      # Inimigo Vermelho
-            'purple': {'color': 8, 'health': 4},   # Inimigo Magenta (Purple)
-            'blue': {'color': 2, 'health': 4},     # Inimigo Azul (Ciano)
-            'green': {'color': 3, 'health': 4},    # Inimigo Verde
-            'yellow': {'color': 15, 'health': 4},   # Inimigo Amarelo
-            'orange': {'color': 5, 'health': 4},   # Inimigo Laranja
-            'asteroid': {'color': 4, 'health': 5}  # Asteroides usam cor Vermelha (4)
-        }
+
+
+
+
+
         # Tipos de inimigos alienígenas que serão gerados
         self.specific_enemy_types = ['red', 'purple', 'blue', 'green', 'yellow', 'orange'] 
         self.enemy_types_sequence = ['green', 'yellow', 'orange', 'blue', 'purple', 'red']
@@ -985,36 +1126,39 @@ class Game:
         # Médias: Roxo Médio (10)
         # Próximas: Roxo Claro (9)
         for _ in range(50): 
-            x = random.randint(0, pyxel.width - 1)
-            y = random.randint(0, pyxel.height - 1)
-            self.background_particles.append(BackgroundParticle(x, y, self.bg_speed_distant, 1, 10)) 
+            x = pyxel.rndi(0, pyxel.width - 1)
+            y = pyxel.rndi(0, pyxel.height - 1)
+            self.background_particles.append(BackgroundParticle(x, y, self.bg_speed_distant, 1, 11)) 
 
         for _ in range(30): 
-            x = random.randint(0, pyxel.width - 1)
-            y = random.randint(0, pyxel.height - 1)
+            x = pyxel.rndi(0, pyxel.width - 1)
+            y = pyxel.rndi(0, pyxel.height - 1)
             self.midground_particles.append(BackgroundParticle(x, y, self.bg_speed_medium, 1, 10)) 
 
         for _ in range(10): 
-            x = random.randint(0, pyxel.width - 1)
-            y = random.randint(0, pyxel.height - 1)
-            size = random.choice([1, 2])
+            x = pyxel.rndi(0, pyxel.width - 1)
+            y = pyxel.rndi(0, pyxel.height - 1)
+            size = pyxel.rndi(1, 2)
             self.foreground_particles.append(BackgroundParticle(x, y, self.bg_speed_close, size, 9)) 
 
         # --- ADIÇÃO: Asteroides de Fundo ---
         # Asteroides de fundo distantes
         for _ in range(5): 
-            x = random.randint(0, pyxel.width - Asteroid(0,0,'large').base_size)
-            y = random.randint(0, pyxel.height - Asteroid(0,0,'large').base_size)
-            self.background_particles.append(BackgroundAsteroid(x, y, 'large', self.bg_speed_distant, 10)) # Roxo Médio (10)
+            size = self.ASTEROID_SIZES['large']
+            x = pyxel.rndi(0, pyxel.width - size)
+            y = pyxel.rndi(0, pyxel.height - size)
+            self.background_particles.append(BackgroundAsteroid(x, y, 'large', self.bg_speed_distant, 11))
 
-        # Asteroides de fundo médios
         for _ in range(5):
-            x = random.randint(0, pyxel.width - Asteroid(0,0,'medium').base_size)
-            y = random.randint(0, pyxel.height - Asteroid(0,0,'medium').base_size)
-            self.midground_particles.append(BackgroundAsteroid(x, y, 'medium', self.bg_speed_medium, 0)) #Preto (0) 
+            size = self.ASTEROID_SIZES['medium']
+            x = pyxel.rndi(0, pyxel.width - size)
+            y = pyxel.rndi(0, pyxel.height - size)
+            self.midground_particles.append(BackgroundAsteroid(x, y, 'medium', self.bg_speed_medium, 10))
+
+            
         
         #self.spawn_enemy_wave() 
-        self.spawn_test_enemy()
+        self._setup_wave()
 
         pyxel.run(self.update, self.draw) 
 
@@ -1022,8 +1166,8 @@ class Game:
     def restart_game(self):
         """Reseta o jogo para seu estado inicial."""
         self.player_lives = 3
-        self.player_hp = self.player_max_hp # Reseta HP
-        self.player_energy = self.player_max_energy # Reseta Energia
+        self.player_hp = self.player_max_hp
+        self.player_energy = self.player_max_energy
         self.score = 0
         self.game_state = 'playing'
         
@@ -1032,86 +1176,139 @@ class Game:
         self.player.is_alive = True
         self.player.invincibility_timer = 0
         
-        self.bullets = []
-        self.particles = [] 
-        self.enemies = []
-        self.flame_particles = [] 
-        self.powerups = []
-        self.enemy_bullets = []
+        self.bullets, self.particles, self.enemies, self.flame_particles, self.powerups, self.enemy_bullets = [], [], [], [], [], []
         
         self.current_enemy_category = 'aliens'
-        self.spawn_enemy_wave()
-        self.reset_screen_shake() # Reseta o shake ao reiniciar
+        
+        # --- CORREÇÃO APLICADA AQUI ---
+        self.wave_number = 1
+        self._setup_wave()
+        
+        self.reset_screen_shake()
 
+    def _setup_wave(self):
+        """Prepara a lista de inimigos a serem gerados para a onda atual."""
+        self.enemies_to_spawn = [] # Limpa a fila
+        
+        if self.current_enemy_category == 'aliens':
+            if self.wave_number == 1: # Formação de Grade (Inspirado na Fase 1)
+                pattern = self.MOVEMENT_PATTERNS['alien_grid_formation']
+                num_rows, num_cols, spacing_x, spacing_y = 3, 5, 16, 12
+                num_enemy_types = len(self.specific_enemy_types)
+                start_x = (128 - (num_cols * Enemy.SPRITE_W + (num_cols - 1) * spacing_x)) / 2
+                start_y = -((num_rows * Enemy.SPRITE_H) + ((num_rows - 1) * spacing_y))
+                for row in range(num_rows):
+                    for col in range(num_cols):
+                        enemy_random_index = pyxel.rndi(0, num_enemy_types-1)
+                        enemy_type = self.specific_enemy_types[enemy_random_index]
+                        enemy_def = self.enemy_definitions[enemy_type]
+                        x, y = start_x + col * (Enemy.SPRITE_W + spacing_x), start_y + row * (Enemy.SPRITE_H + spacing_y)
+                        self.enemies_to_spawn.append({'x': x, 'y': y, 'type': enemy_type, 'def': enemy_def, 'pattern': pattern, 'delay': 0})
+
+            elif self.wave_number == 2: # Entrada Galaga (Inspirado na Fase 2)
+                pattern = self.MOVEMENT_PATTERNS['alien_galaga_entry']
+                num_enemies = 8
+                final_positions = [(20 + i * 12, 40) for i in range(num_enemies)] # Posições finais em linha
+                for i in range(num_enemies):
+                    enemy_type = random.choice(self.specific_enemy_types)
+                    enemy_def = self.enemy_definitions[enemy_type]
+                    kwargs = {'final_x': final_positions[i][0], 'final_y': final_positions[i][1]}
+                    self.enemies_to_spawn.append({'x': 0, 'y': -10, 'type': enemy_type, 'def': enemy_def, 'pattern': pattern, 'delay': 30 * i, 'kwargs': kwargs})
+
+            elif self.wave_number == 3: # Entrada Lateral (Inspirado na Fase 3)
+                pattern = self.MOVEMENT_PATTERNS['alien_side_entry_align']
+                num_enemies = 10
+                final_positions = [(20 + (i % 5) * 18, 20 + (i // 5) * 15) for i in range(num_enemies)] # Grid 2x5
+                for i in range(num_enemies):
+                    enemy_type = random.choice(self.specific_enemy_types)
+                    enemy_def = self.enemy_definitions[enemy_type]
+                    direction = 1 if i % 2 == 0 else -1
+                    kwargs = {'final_x': final_positions[i][0], 'final_y': final_positions[i][1], 'direction': direction}
+                    self.enemies_to_spawn.append({'x': 0, 'y': 0, 'type': enemy_type, 'def': enemy_def, 'pattern': pattern, 'delay': 20 * i, 'kwargs': kwargs})
+            
+            else: # Se acabaram as ondas de aliens, reinicia o ciclo de ondas de aliens
+                self.wave_number = 1
+                self._setup_wave()
+
+        elif self.current_enemy_category == 'asteroids':
+            if self.wave_number == 1:
+                wave_patterns = ['asteroid_slow_drift']
+                num_asteroids = 5
+            elif self.wave_number == 2:
+                wave_patterns = ['asteroid_slow_drift', 'asteroid_fast_fall']
+                num_asteroids = 8
+            else: # Se acabaram as ondas de asteroides, reinicia o ciclo de ondas de asteroides
+                self.wave_number = 1
+                self._setup_wave()
+                return # Retorna para evitar executar o código de spawn abaixo com valores antigos
+
+            for _ in range(num_asteroids):
+                pattern_name = random.choice(wave_patterns)
+                movement_pattern = self.MOVEMENT_PATTERNS[pattern_name]
+                size_type = random.choice(['medium', 'large'])
+                asteroid_size_ref = self.ASTEROID_SIZES[size_type]
+                x, y = pyxel.rndi(0, pyxel.width - asteroid_size_ref), pyxel.rndi(-40, -20)
+                self.enemies_to_spawn.append({'is_asteroid': True, 'x': x, 'y': y, 'size': size_type, 'pattern': movement_pattern, 'delay': pyxel.rndi(0, 60)})
+
+    def _update_wave_spawner(self):
+        """Verifica se é hora de gerar a próxima onda ou o próximo inimigo da fila."""
+        if not self.enemies and not self.enemies_to_spawn: # Se a tela está limpa e a fila vazia
+            self.wave_spawn_timer += 1
+            if self.wave_spawn_timer > self.wave_spawn_delay:
+                self.wave_number += 1
+                self.wave_spawn_timer = 0
+                self.enemy_spawn_timer = 0
+                self._setup_wave()
+        
+        elif self.enemies_to_spawn:
+            self.enemy_spawn_timer += 1
+            # O primeiro inimigo da fila tem um delay, então verificamos contra ele
+            if self.enemy_spawn_timer >= self.enemies_to_spawn[0]['delay']:
+                enemy_data = self.enemies_to_spawn.pop(0)
+                
+                # Lógica para criar o tipo certo de objeto
+                if enemy_data.get('is_asteroid'):
+                    self.enemies.append(Asteroid(
+                        x=enemy_data['x'], y=enemy_data['y'], 
+                        size_type=enemy_data['size'],
+                        movement_pattern=enemy_data['pattern']
+                    ))
+                else: # É um inimigo alienígena padrão
+                    kwargs = enemy_data.get('kwargs', {})
+                    self.enemies.append(Enemy(
+                        x=enemy_data['x'], y=enemy_data['y'], type=enemy_data['type'], 
+                        color=enemy_data['def']['color'], health=enemy_data['def']['health'], 
+                        movement_pattern=enemy_data['pattern'], **kwargs
+                    ))
+                
+                # Reseta o timer para o delay do próximo inimigo (se houver)
+                if self.enemies_to_spawn:
+                    self.enemy_spawn_timer = 0
+    
     def spawn_test_enemy(self):
-        """Limpa os inimigos e gera um único inimigo para teste."""
-        # Limpa a lista de inimigos e balas inimigas existentes.
+        """Limpa e gera um único inimigo de teste usando o padrão de movimento selecionado."""
         self.enemies.clear()
         self.enemy_bullets.clear()
 
-        # Pega o tipo de inimigo atual da sequência.
         enemy_type = self.enemy_types_sequence[self.current_enemy_type_index]
-        
-        # Pega os dados desse inimigo (cor, vida).
         enemy_data = self.enemy_definitions[enemy_type]
-        color = enemy_data['color']
-        health = enemy_data['health']
-        
-        # Define a posição inicial (topo, centro).
-        spawn_x = pyxel.width / 2 - Enemy.SPRITE_W / 2
-        spawn_y = 15
+        spawn_x, spawn_y = pyxel.width / 2 - Enemy.SPRITE_W / 2, 15
 
-        # Define a velocidade reduzida para o teste.
-        test_speed = 0.25
+        # 1. Pega o NOME do padrão atual usando o índice.
+        pattern_name = self.movement_pattern_keys[self.current_movement_pattern_index]
+        # 2. Pega o DICIONÁRIO completo do padrão correspondente.
+        movement_pattern = self.MOVEMENT_PATTERNS[pattern_name]
 
-        # Cria a instância do inimigo com a velocidade reduzida.
-        new_enemy = Enemy(spawn_x, spawn_y, enemy_type, color, health, speed=test_speed)
+        # 3. Passa o dicionário do padrão para o construtor do inimigo.
+        new_enemy = Enemy(spawn_x, spawn_y, enemy_type, enemy_data['color'], enemy_data['health'], movement_pattern)
         
         # Adiciona o inimigo único à lista.
-        self.enemies.append(new_enemy)
+        self.enemies.append(new_enemy)    
 
-    def spawn_enemy_wave(self):
-        self.enemies = [] 
-        num_rows = 3
-        num_cols = 3
-        enemy_spacing_x = 16
-        enemy_spacing_y = 12
 
-        if self.current_enemy_category == 'aliens':
-            # Gera 9 inimigos (3x3 grid) usando apenas os tipos restantes
-            enemy_types_for_wave = []
-            for _ in range(num_rows * num_cols):
-                chosen_type = random.choice(self.specific_enemy_types) # Escolhe entre 'red', 'purple', 'blue', 'green', 'yellow', 'orange'
-                enemy_types_for_wave.append(chosen_type)
-            random.shuffle(enemy_types_for_wave) 
-
-            # Os inimigos alienígenas agora têm um tamanho fixo definido por Enemy.SPRITE_DATA
-            enemy_width_ref = Enemy(0,0,'dummy',0,0).width 
-            enemy_height_ref = Enemy(0,0,'dummy',0,0).height
-            
-            start_x = (pyxel.width - (num_cols * enemy_width_ref + (num_cols - 1) * enemy_spacing_x)) / 2
-            start_y = -((num_rows * enemy_height_ref) + ((num_rows - 1) * enemy_spacing_y)) - 5 
-
-            for row in range(num_rows):
-                for col in range(num_cols):
-                    enemy_type = enemy_types_for_wave.pop() 
-                    enemy_definition = self.enemy_definitions[enemy_type]
-                    enemy_x = start_x + col * (enemy_width_ref + enemy_spacing_x)
-                    enemy_y = start_y + row * (enemy_height_ref + enemy_spacing_y)
-                    self.enemies.append(Enemy(enemy_x, enemy_y, enemy_type, enemy_definition['color'], enemy_definition['health']))
-        
-        elif self.current_enemy_category == 'asteroids':
-            num_asteroids = random.randint(3, 6) 
-            for _ in range(num_asteroids):
-                size_type = random.choice(['medium', 'large']) 
-                asteroid_size_ref = Asteroid(0,0,'large').base_size 
-                asteroid_x = random.randint(0, pyxel.width - asteroid_size_ref) 
-                asteroid_y = random.randint(-40, -10) 
-                self.enemies.append(Asteroid(asteroid_x, asteroid_y, size_type, None, None)) 
-    
     def spawn_powerup(self):
-        powerup_x = random.randint(0, pyxel.width - PowerUp(0,0,'boost').width)
-        powerup_y = -PowerUp(0,0,'boost').height - random.randint(10, 30)
+        powerup_x = pyxel.rndi(0, pyxel.width - PowerUp(0,0,'boost').width)
+        powerup_y = -PowerUp(0,0,'boost').height - pyxel.rndi(10, 30)
         self.powerups.append(PowerUp(powerup_x, powerup_y, 'boost'))
 
     # Método auxiliar para detecção de colisão AABB (Axis-Aligned Bounding Box)
@@ -1159,11 +1356,11 @@ class Game:
                     # Só criamos partículas para pixels que são visíveis (cor diferente de 0).
                     if pixel_color != 0:
                         # Gera uma velocidade aleatória (dx, dy) para a partícula, para que ela se espalhe.
-                        dx = random.uniform(-1.5, 1.5)
-                        dy = random.uniform(-1.5, 1.5)
+                        dx = pyxel.rndf(-1.5, 1.5)
+                        dy = pyxel.rndf(-1.5, 1.5)
                         
                         # Define um tempo de vida aleatório para a partícula.
-                        lifetime = random.randint(20, 40)
+                        lifetime = pyxel.rndi(20, 40)
                         
                         # Cria a instância da partícula de detrito de pixel.
                         particle = PixelDebrisParticle(
@@ -1185,13 +1382,13 @@ class Game:
         num_particles = int((asteroid.width * asteroid.height) / 20)
         for _ in range(num_particles):
             # Gera uma posição aleatória dentro da caixa delimitadora do asteroide.
-            px = asteroid.x + random.uniform(0, asteroid.width)
-            py = asteroid.y + random.uniform(0, asteroid.height)
+            px = asteroid.x + pyxel.rndf(0, asteroid.width)
+            py = asteroid.y + pyxel.rndf(0, asteroid.height)
 
             # Usa velocidades menores para simular poeira em vez de uma explosão.
-            dx = random.uniform(-0.8, 0.8)
-            dy = random.uniform(-0.8, 0.8)
-            lifetime = random.randint(15, 30)
+            dx = pyxel.rndf(-0.8, 0.8)
+            dy = pyxel.rndf(-0.8, 0.8)
+            lifetime = pyxel.rndi(15, 30)
             self.particles.append(PixelDebrisParticle(px, py, asteroid.color, dx, dy, lifetime))
 
 
@@ -1201,13 +1398,13 @@ class Game:
         Usado para feedback visual quando um tiro atinge um inimigo.
         """
         # Gera um pequeno número de partículas (2 a 3) para o efeito.
-        for _ in range(random.randint(2, 3)):
+        for _ in range(pyxel.rndi(2, 3)):
             # Define uma velocidade de espalhamento alta e aleatória.
-            dx = random.uniform(-2, 2)
-            dy = random.uniform(-2, 2)
+            dx = pyxel.rndf(-2, 2)
+            dy = pyxel.rndf(-2, 2)
             
             # Define um tempo de vida muito curto (entre 4 e 8 frames).
-            lifetime = random.randint(4, 8)
+            lifetime = pyxel.rndi(4, 8)
             
             # Cria a partícula de explosão, que aqui serve como uma faísca.
             spark = ExplosionParticle(x, y, dx, dy, color, lifetime)
@@ -1242,9 +1439,9 @@ class Game:
                 py = p1[1] + t * (p2[1] - p1[1])
                 
                 # Cria a partícula de detrito.
-                dx = random.uniform(-1.5, 1.5)
-                dy = random.uniform(-1.5, 1.5)
-                lifetime = random.randint(25, 45)
+                dx = pyxel.rndf(-1.5, 1.5)
+                dy = pyxel.rndf(-1.5, 1.5)
+                lifetime = pyxel.rndi(25, 45)
                 self.particles.append(PixelDebrisParticle(px, py, asteroid.color, dx, dy, lifetime))
 
         # ### 2. GERAÇÃO DE PARTÍCULAS DE PREENCHIMENTO ###
@@ -1252,13 +1449,13 @@ class Game:
         num_interior_particles = int((asteroid.width * asteroid.height) / 4)
         for _ in range(num_interior_particles):
             # Gera uma posição aleatória dentro da caixa delimitadora do asteroide.
-            px = asteroid.x + random.uniform(0, asteroid.width)
-            py = asteroid.y + random.uniform(0, asteroid.height)
+            px = asteroid.x + pyxel.rndf(0, asteroid.width)
+            py = asteroid.y + pyxel.rndf(0, asteroid.height)
 
             # Cria a partícula de detrito.
-            dx = random.uniform(-1.0, 1.0) # Velocidade um pouco menor para o interior.
-            dy = random.uniform(-1.0, 1.0)
-            lifetime = random.randint(20, 40)
+            dx = pyxel.rndf(-1.0, 1.0) # Velocidade um pouco menor para o interior.
+            dy = pyxel.rndf(-1.0, 1.0)
+            lifetime = pyxel.rndi(20, 40)
             self.particles.append(PixelDebrisParticle(px, py, asteroid.color, dx, dy, lifetime))
 
     def trigger_screen_shake(self, duration, intensity):
@@ -1274,6 +1471,8 @@ class Game:
         self.shake_offset_y = 0
     
     def update(self):
+
+        self._update_wave_spawner()
         # --- LÓGICA DE PAUSA ---
         # Tecla para pausar/despausar o jogo.
         if pyxel.btnp(pyxel.KEY_P):
@@ -1294,8 +1493,8 @@ class Game:
         
         # --- LÓGICA DO SCREEN SHAKE ---
         if self.shake_duration > 0:
-            self.shake_offset_x = random.randint(-self.shake_intensity, self.shake_intensity)
-            self.shake_offset_y = random.randint(-self.shake_intensity, self.shake_intensity)
+            self.shake_offset_x = pyxel.rndi(-self.shake_intensity, self.shake_intensity)
+            self.shake_offset_y = pyxel.rndi(-self.shake_intensity, self.shake_intensity)
             self.shake_duration -= 1
         else:
             self.shake_offset_x = 0
@@ -1344,7 +1543,7 @@ class Game:
 
         # Geração de partículas de rastro para a nave do jogador
         if self.is_boosting:
-            min_dy, max_dy, num_particles, c1, c2 = 1.0, 2.0, 6, 6, 2  
+            min_dy, max_dy, num_particles, c1, c2 = 1.0, 2.0, 6, 8, 2  
             flame_size = 2 if random.random() < 0.4 else 1 
         else:
             min_dy, max_dy, num_particles, c1, c2 = 0.5, 1.0, 2, 4, 5 
@@ -1354,12 +1553,12 @@ class Game:
         flame_dx_offset = 0.5 if pyxel.btn(pyxel.KEY_LEFT) else -0.5 if pyxel.btn(pyxel.KEY_RIGHT) else 0
 
         for _ in range(num_particles):
-            flame_x = self.player.x + random.uniform(3, self.player.width - 4) #tamanho da chama
+            flame_x = self.player.x + pyxel.rndf(3, self.player.width - 4) #tamanho da chama
             # A chama é gerada na parte inferior da nave, com um pequeno deslocamento aleatório
             flame_y = self.player.y + self.player.height-1
-            dx = random.uniform(-0.5, 0.5) + flame_dx_offset
-            dy = random.uniform(min_dy, max_dy) 
-            self.flame_particles.append(FlameParticle(flame_x, flame_y, dx, dy, flame_color, random.randint(5,15), flame_size))
+            dx = pyxel.rndf(-0.5, 0.5) + flame_dx_offset
+            dy = pyxel.rndf(min_dy, max_dy) 
+            self.flame_particles.append(FlameParticle(flame_x, flame_y, dx, dy, flame_color, pyxel.rndi(5,15), flame_size))
 
         for p in self.flame_particles:
             p.update()
@@ -1424,8 +1623,13 @@ class Game:
 
         if pyxel.btnp(pyxel.KEY_V) or pyxel.btnp(pyxel.GAMEPAD1_BUTTON_Y):
             self.current_enemy_category = 'asteroids' if self.current_enemy_category == 'aliens' else 'aliens'
-            self.spawn_enemy_wave() 
-            self.game_state = 'playing' 
+            # Limpa tudo para a transição
+            self.enemies.clear()
+            self.enemies_to_spawn.clear()
+            # Reseta para a onda 1 da nova categoria e a prepara
+            self.wave_number = 1
+            self._setup_wave()
+            self.game_state = 'playing'
 
 
         if pyxel.btnp(pyxel.KEY_G):
@@ -1438,15 +1642,12 @@ class Game:
                 self.enemy_bullets.append(new_bullet)
 
 
-
-        # Tecla 'C' para ciclar entre os tipos de inimigos no modo de teste.
+        # Tecla 'C' para forçar a próxima onda.
         if pyxel.btnp(pyxel.KEY_C):
-            # Avança o índice para o próximo tipo, voltando ao início no final.
-            num_types = len(self.enemy_types_sequence)
-            self.current_enemy_type_index = (self.current_enemy_type_index + 1) % num_types
-            
-            # Gera o novo inimigo de teste.
-            self.spawn_test_enemy()
+            self.enemies.clear()
+            self.enemies_to_spawn.clear()
+            self.wave_spawn_timer = self.wave_spawn_delay # Força a transição imediata
+
         # --- SEÇÃO DE COLISÃO DE BALAS E PROCESSAMENTO DE DESTRUIÇÃO ---
         bullets_to_keep = []
         
@@ -1597,23 +1798,7 @@ class Game:
         self.enemies[:] = [e for e in self.enemies if e.health > 0 and e.y < pyxel.height and e.x < pyxel.width and e.x + e.width > 0]
 
         # Lógica de gerenciamento de ondas
-        if self.game_state == 'playing' and not self.enemies: 
-            self.game_state, self.wave_cleared_timer = 'wave_cleared', 0 
-        elif self.game_state == 'wave_cleared':
-         # O jogo está em pausa, esperando o comando do jogador para continuar.
-            if pyxel.btnp(pyxel.KEY_SPACE) or pyxel.btnp(pyxel.GAMEPAD1_BUTTON_START):
-                # Mantemos a chance de spawnar um power-up entre as ondas.
-                if random.random() < self.powerup_spawn_chance and not self.powerups: 
-                    self.spawn_powerup()
-                    self.game_state = 'waiting_for_powerup' 
-                else:
-                    # Se não spawnar power-up, inicia a próxima onda de inimigos.
-                    self.spawn_enemy_wave() 
-                    self.game_state = 'playing'
-
-        elif self.game_state == 'waiting_for_powerup' and not self.powerups: 
-            self.spawn_enemy_wave()
-            self.game_state = 'playing'
+        self._update_wave_spawner()
 
         # Atualiza e coleta power-ups
         powerups_to_keep = []
@@ -1671,7 +1856,7 @@ class Game:
             # Se o inimigo foi atingido mas NÃO foi derrotado, apenas criamos as faíscas.
             self.laser_draw_end_y, self.laser_spark_point = closest_impact_y, final_spark_point
             spark_color = 4 if pyxel.frame_count % 4 < 2 else 5
-            self.particles.append(ExplosionParticle(final_spark_point[0] + random.uniform(-2, 2), final_spark_point[1] + random.uniform(-2, 2), random.uniform(-1, 1), random.uniform(-1, 1), spark_color, random.randint(5, 10)))
+            self.particles.append(ExplosionParticle(final_spark_point[0] + pyxel.rndf(-2, 2), final_spark_point[1] + pyxel.rndf(-2, 2), pyxel.rndf(-1, 1), pyxel.rndf(-1, 1), spark_color, pyxel.rndi(5, 10)))
         else:
             self.laser_draw_end_y, self.laser_spark_point = 0, None
         
@@ -1699,7 +1884,7 @@ class Game:
 
         # Dispara os projéteis
         for i in range(props['num_shots']):
-            angle = math.radians(props['angles_deg'][i]) + random.uniform(-math.radians(props['spread_deg'])/2, math.radians(props['spread_deg'])/2)
+            angle = math.radians(props['angles_deg'][i]) + pyxel.rndf(-math.radians(props['spread_deg'])/2, math.radians(props['spread_deg'])/2)
             dx, dy = props['speed'] * math.cos(angle), props['speed'] * math.sin(angle) 
             self.bullets.append(Bullet(player_center_x, bullet_y, props['color'], self.bullet_type_keys[self.current_bullet_type_index], dx, dy, props['damage'], size['height'], size['width'], behavior, self.flame_particles))
         
@@ -1765,18 +1950,7 @@ class Game:
             text_x = (pyxel.width - len(text) * 4) / 2
             pyxel.text(text_x, 60, text, 7) # Branco
 
-        elif self.game_state == 'wave_cleared':
-            # Mensagem principal de onda concluída
-            text = "WAVE CLEARED!"
-            text_x = (pyxel.width - len(text) * 4) / 2
-            pyxel.text(text_x, 50, text, 15) # Amarelo (15)
-            
-            # Mensagem de instrução que pisca
-            prompt = "PRESS SPACE TO CONTINUE"
-            prompt_x = (pyxel.width - len(prompt) * 4) / 2
-            if pyxel.frame_count % 30 < 20:
-                pyxel.text(prompt_x, 60, prompt, 7)
-
+        
         elif self.game_state == 'game_over':
             # Mensagem principal de Game Over
             text = "GAME OVER"
@@ -1792,5 +1966,3 @@ class Game:
 
 if __name__ == "__main__":
     Game()
-
-
