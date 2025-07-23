@@ -906,7 +906,7 @@ class Game:
     def __init__(self):
         self.game_fps = 60 
         pyxel.init(128, 128, title="Space Game", fps=self.game_fps)
-        pyxel.load("shipgame.pyxres")
+        pyxel.load("ship_game.pyxres")
         # --- CONFIGURAÇÃO DA PALETA DE CORES ---
         # Definindo as cores Pyxel de 0 a 15 de acordo com a paleta fornecida e os novos requisitos
         
